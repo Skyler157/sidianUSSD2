@@ -14,7 +14,9 @@
       "5": "Bill Payment",
       "6": "Pay Merchant",
       "7": "Change PIN",
-      "0": "Exit"
+      "8": "Term Deposits", 
+      "0": "Back",
+      "00": "Exit"
     }
   },
   "myaccount": {
@@ -45,100 +47,111 @@
     "message": "Select Account to view mini statement",
     "type": "account_selection"
   },
-"fullstatement": {
-  "message": "Select Account to view full statement",
-  "type": "account_selection"
+  "fullstatement": {
+    "message": "Select Account to view full statement",
+    "type": "account_selection"
+  },
+  "beneficiary": {
+    "message": "Manage Beneficiaries",
+    "type": "menu",
+    "options": {
+        "1": "M-PESA",
+        "2": "Airtime",
+        "3": "Account Transfer",
+        "4": "Bills",
+        "0": "Back",
+        "00": "Exit"
+    }
 },
-"mobilemoney": {
-  "message": "Mobile Money",
-  "type": "menu",
-  "options": {
-    "1": "Account to M-PESA",
-    "2": "M-PESA to Account",
-    "3": "Buy Float",
-    "4": "Buy Goods", 
-    "5": "Paybill",
-    "0": "Back",
-    "00": "Exit"
-  }
-},
-"withdraw": {
-  "message": "Send to M-PESA",
-  "type": "menu", 
-  "options": {
-    "1": "Own Number",
-    "2": "Other Number",
-    "3": "Saved Beneficiary",
-    "4": "Manage M-PESA Beneficiaries",
-    "0": "Back",
-    "00": "Exit"
-  }
-},
-"withdrawmsisdn": {
-  "message": "Enter the M-PESA mobile number",
-  "type": "input"
-},
-"withdrawamount": {
-  "message": "Enter Amount:",
-  "type": "input"
-},
-"withdrawbankaccount": {
-  "message": "Select source account",
-  "type": "account_selection"
-},
-"withdrawconfirm": {
-  "message": "Confirm sending Ksh {amount} to M-PESA {mobile} from account {account}",
-  "type": "menu",
-  "options": {
-    "1": "Confirm",
-    "2": "Cancel"
-  }
-},
-"managewithdrawbeneficiary": {
-  "message": "Manage M-PESA Beneficiaries",
-  "type": "menu",
-  "options": {
-    "1": "Add M-PESA Beneficiary",
-    "2": "View M-PESA Beneficiaries", 
-    "3": "Delete M-PESA Beneficiary",
-    "0": "Back",
-    "00": "Exit"
-  }
-},
-"addwithdrawbeneficiary": {
-  "message": "Enter the M-PESA mobile number",
-  "type": "input"
-},
-"addwithdrawbeneficiaryname": {
-  "message": "Enter the beneficiary's name",
-  "type": "input"
-},
-"addwithdrawbeneficiaryconfirm": {
-  "message": "Save {alias} - {mobile} as an M-PESA beneficiary",
-  "type": "menu", 
-  "options": {
-    "1": "YES, Save",
-    "2": "Cancel"
-  }
-},
-"deposit": {
-  "message": "Enter Amount to deposit from M-PESA",
-  "type": "input"
-},
-"depositbankaccount": {
-  "message": "Select account to deposit to",
-  "type": "account_selection"
-},
-"depositconfirm": {
-  "message": "Confirm deposit of Ksh {amount} to account {account} from your M-PESA",
-  "type": "menu",
-  "options": {
-    "1": "Confirm", 
-    "2": "Cancel"
-  }
-},
-
-"airtime": {
+  "mobilemoney": {
+    "message": "Mobile Money",
+    "type": "menu",
+    "options": {
+      "1": "Account to M-PESA",
+      "2": "M-PESA to Account",
+      "3": "Buy Float",
+      "4": "Buy Goods",
+      "5": "Paybill",
+      "0": "Back",
+      "00": "Exit"
+    }
+  },
+  "withdraw": {
+    "message": "Send to M-PESA",
+    "type": "menu",
+    "options": {
+      "1": "Own Number",
+      "2": "Other Number",
+      "3": "Saved Beneficiary",
+      "4": "Manage M-PESA Beneficiaries",
+      "0": "Back",
+      "00": "Exit"
+    }
+  },
+  "withdrawmsisdn": {
+    "message": "Enter the M-PESA mobile number",
+    "type": "input"
+  },
+  "withdrawamount": {
+    "message": "Enter Amount:",
+    "type": "input"
+  },
+  "withdrawbankaccount": {
+    "message": "Select source account",
+    "type": "account_selection"
+  },
+  "withdrawconfirm": {
+    "message": "Confirm sending Ksh {amount} to M-PESA {mobile} from account {account}",
+    "type": "menu",
+    "options": {
+      "1": "Confirm",
+      "2": "Cancel"
+    }
+  },
+  "managewithdrawbeneficiary": {
+    "message": "Manage M-PESA Beneficiaries",
+    "type": "menu",
+    "options": {
+      "1": "Add M-PESA Beneficiary",
+      "2": "View M-PESA Beneficiaries",
+      "3": "Delete M-PESA Beneficiary",
+      "0": "Back",
+      "00": "Exit"
+    }
+  },
+  "addwithdrawbeneficiary": {
+    "message": "Enter the M-PESA mobile number",
+    "type": "input"
+  },
+  "addwithdrawbeneficiaryname": {
+    "message": "Enter the beneficiary's name",
+    "type": "input"
+  },
+  "addwithdrawbeneficiaryconfirm": {
+    "message": "Save {alias} - {mobile} as an M-PESA beneficiary",
+    "type": "menu",
+    "options": {
+      "1": "YES, Save",
+      "2": "Cancel"
+    }
+  },
+  "deposit": {
+    "message": "Enter Amount to deposit from M-PESA",
+    "type": "input"
+  },
+  "depositbankaccount": {
+    "message": "Select account to deposit to",
+    "type": "account_selection"
+  },
+  "depositconfirm": {
+    "message": "Confirm deposit of Ksh {amount} to account {account} from your M-PESA",
+    "type": "menu",
+    "options": {
+      "1": "Confirm",
+      "2": "Cancel"
+    }
+  },
+  "airtime": {
     "message": "Airtime",
     "type": "menu",
     "options": {
@@ -450,8 +463,12 @@
     "message": "PIN changed successfully",
     "type": "end"
   },
+  "forgotpin": {
+    "message": "Enter your account number",
+    "type": "input"
+  },
   "exit": {
-    "message": "Thank you for using Paramount Bank USSD service",
+    "message": "Thank you for using Sidian Bank USSD service",
     "type": "end"
   },
   "account_selection": {
@@ -470,12 +487,52 @@
       "00": "Exit"
     }
   },
-  "transaction_failed": {
-    "message": "Transaction failed: {error_message}",
-    "type": "menu",
-    "options": {
-      "0": "Back",
-      "00": "Exit"
+    "transaction_failed": {
+      "message": "Transaction failed: {error_message}",
+      "type": "menu",
+      "options": {
+        "0": "Back",
+        "00": "Exit"
+      }
+    },
+    "termdeposits": {
+      "message": "Term Deposits",
+      "type": "menu",
+      "options": {
+        "1": "Fixed Deposit",
+        "2": "Call Deposit",
+        "0": "Back",
+        "00": "Exit"
+      }
+    },
+    "termdepositstenure": {
+      "message": "Select Tenure",
+      "type": "menu",
+      "options": {
+        "1": "One Month",
+        "2": "Three Months",
+        "3": "Six Months",
+        "4": "Nine Months",
+        "5": "One Year",
+        "0": "Back",
+        "00": "Home",
+        "000": "Exit"
+      }
+    },
+    "termdepositsamount": {
+      "message": "Enter Amount",
+      "type": "input"
+    },
+    "termdepositsbankaccount": {
+      "message": "Select source account",
+      "type": "account_selection"
+    },
+    "termdepositstransaction": {
+      "message": "Confirm term deposit setup",
+      "type": "menu",
+      "options": {
+        "1": "Confirm",
+        "2": "Cancel"
+      }
     }
   }
-}

@@ -1,4 +1,4 @@
-const redisService = require('../config/redis').client; // cluster-ready
+const redisService = require('../config/redis').client;
 const apiService = require('./apiService');
 const logger = require('./logger');
 
@@ -271,61 +271,114 @@ class USSDService {
     }
 
     async handleWithdraw(customer, accountNumber, recipientMobile, amount, pin, msisdn, session, shortcode) {
-    logger.info(`[USSD] handleWithdraw() | account=${accountNumber} | recipient=${recipientMobile} | amount=${amount}`);
+        logger.info(`[USSD] handleWithdraw() | account=${accountNumber} | recipient=${recipientMobile} | amount=${amount}`);
 
-    try {
-        const data =
-            `BANKACCOUNTID:${accountNumber}:` +
-            `CUSTOMERID:${customer.customerid}:` +
-            `RECIPIENTMOBILE:${recipientMobile}:` +
-            `AMOUNT:${amount}:` +
-            `PIN:${pin}:` +
-            `ACTION:WITHDRAW`;
+        try {
+            const data =
+                `BANKACCOUNTID:${accountNumber}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `RECIPIENTMOBILE:${recipientMobile}:` +
+                `AMOUNT:${amount}:` +
+                `PIN:${pin}:` +
+                `ACTION:WITHDRAW`;
 
-        const response = await apiService.makeRequest(
-            "MOBILEMONEY",
-            data,
-            msisdn,
-            session,
-            shortcode
-        );
+            const response = await apiService.makeRequest(
+                "MOBILEMONEY",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
 
-        logger.info(`[USSD] WITHDRAW Response: ${JSON.stringify(response)}`);
-        return response;
+            logger.info(`[USSD] WITHDRAW Response: ${JSON.stringify(response)}`);
+            return response;
 
-    } catch (error) {
-        logger.error(`[USSD] Error in handleWithdraw: ${error.message}`);
-        return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        } catch (error) {
+            logger.error(`[USSD] Error in handleWithdraw: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
     }
-}
 
-async handleDeposit(customer, accountNumber, amount, msisdn, session, shortcode) {
-    logger.info(`[USSD] handleDeposit() | account=${accountNumber} | amount=${amount}`);
+    async handleDeposit(customer, accountNumber, amount, msisdn, session, shortcode) {
+        logger.info(`[USSD] handleDeposit() | account=${accountNumber} | amount=${amount}`);
 
-    try {
-        const data =
-            `BANKACCOUNTID:${accountNumber}:` +
-            `CUSTOMERID:${customer.customerid}:` +
-            `AMOUNT:${amount}:` +
-            `ACTION:DEPOSIT`;
+        try {
+            const data =
+                `BANKACCOUNTID:${accountNumber}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `AMOUNT:${amount}:` +
+                `ACTION:DEPOSIT`;
 
-        const response = await apiService.makeRequest(
-            "MOBILEMONEY",
-            data,
-            msisdn,
-            session,
-            shortcode
-        );
+            const response = await apiService.makeRequest(
+                "MOBILEMONEY",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
 
-        logger.info(`[USSD] DEPOSIT Response: ${JSON.stringify(response)}`);
-        return response;
+            logger.info(`[USSD] DEPOSIT Response: ${JSON.stringify(response)}`);
+            return response;
 
-    } catch (error) {
-        logger.error(`[USSD] Error in handleDeposit: ${error.message}`);
-        return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        } catch (error) {
+            logger.error(`[USSD] Error in handleDeposit: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
     }
-}
 
+    async handleTermDeposit(customer, depositType, tenure, amount, accountNumber, msisdn, session, shortcode) {
+        logger.info(`[USSD] handleTermDeposit() | type=${depositType} | tenure=${tenure} | amount=${amount} | account=${accountNumber}`);
+
+        try {
+            const data =
+                `DEPOSITTYPE:${depositType}:` +
+                `TENURE:${tenure}:` +
+                `AMOUNT:${amount}:` +
+                `BANKACCOUNTID:${accountNumber}:` +
+                `CUSTOMERID:${customer.customerid}`;
+
+            const response = await apiService.makeRequest(
+                "TERMDEPOSIT",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] TERMDEPOSIT Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in handleTermDeposit: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    async handlePinChange(customer, oldPin, newPin, msisdn, session, shortcode) {
+        logger.info(`[USSD] handlePinChange() | customerid=${customer.customerid}`);
+
+        try {
+            const data =
+                `OLDPIN:${oldPin}:` +
+                `NEWPIN:${newPin}:` +
+                `CUSTOMERID:${customer.customerid}`;
+
+            const response = await apiService.makeRequest(
+                "PINCHANGE",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] PINCHANGE Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in handlePinChange: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
 
     async updateSessionMenu(sessionId, key, value) {
         const sessionData = await this.getSession(sessionId);
