@@ -35,8 +35,21 @@ class ApiService {
 
         logger.info(`CLEANED RESPONSE: ${response}`);
 
+        // Handle deposit success response format: "000:20251125153809"
+        if (response.startsWith('000:')) {
+            return { STATUS: '000', DATA: 'Deposit initiated successfully' };
+        }
+
+        // Handle specific error responses
         if (response.trim() === '-)' || response.length < 3) {
-            return { STATUS: '999', DATA: 'Invalid API response' };
+            logger.error(`API returned error response: ${response}`);
+            return { STATUS: '999', DATA: 'Transaction failed. Please try again later.' };
+        }
+
+        // Check if response has proper key-value format
+        if (!response.includes(':')) {
+            logger.error(`API returned malformed response: ${response}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
         }
 
         const parts = response.split(':');
@@ -76,7 +89,6 @@ class ApiService {
             const response = await axios.get(requestUrl, {
                 timeout: 30000
             });
-
 
             logger.info(`RESPONSE [${service}]: ${response.data}`);
             return this.parseResponse(response.data);

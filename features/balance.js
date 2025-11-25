@@ -1,67 +1,59 @@
-const ussdService = require('../services/ussdService');
-const logger = require('../services/logger');
+const baseFeature = require('./baseFeature');
 
-class BalanceService {
+class BalanceService extends baseFeature {
     constructor() {
-        this.menus = require('../config/menus.json');
+        super();
     }
 
     async balance(customer, msisdn, session, shortcode, response, res) {
-        logger.info(`[BALANCE] balance: ${msisdn}, session: ${session}`);
-
-        const sessionData = await ussdService.getSession(session);
+        this.logger.info(`[BALANCE] balance: ${msisdn}, session: ${session}`);
+        const sessionData = await this.updateSessionMenu(session, 'balance', 'myaccount');
 
         if (!response) {
-            sessionData.current_menu = 'balance';
-            sessionData.previous_menu = 'myaccount';
-            await ussdService.saveSession(session, sessionData);
             return this.showAccountSelection(sessionData, session, res, 'balance');
         }
 
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
+        const menuHandlers = {
+            '0': () => this.handleBack(sessionData, 'accountServices', 'myaccount', msisdn, session, shortcode, res),
+            '00': () => this.handleExit(session, res)
+        };
+
+        if (menuHandlers[response]) {
+            return await menuHandlers[response]();
         }
 
-        // Handle account selection
         const selectedIndex = parseInt(response) - 1;
         const accounts = sessionData.customer.accounts || [];
 
         if (accounts[selectedIndex]) {
-            const selectedAccount = accounts[selectedIndex];
-            sessionData.selected_account = selectedAccount;
+            sessionData.selected_account = accounts[selectedIndex];
             sessionData.current_menu = 'balance_pin';
-            await ussdService.saveSession(session, sessionData);
+            await this.ussdService.saveSession(session, sessionData);
 
-            const message = 'Enter your PIN to check balance:\n\n0. Back\n00. Home';
-            return this.sendResponse(res, 'con', message);
+            return this.sendResponse(res, 'con', 'Enter your PIN to check balance:\n\n0. Back\n00. Exit');
         } else {
-            return this.sendResponse(res, 'con', 'Invalid account selection. Please try again:\n\n0. Back\n00. Home');
+            return this.sendResponse(res, 'con', 'Invalid account selection. Please try again:\n\n0. Back\n00. Exit');
         }
     }
 
     async balance_pin(customer, msisdn, session, shortcode, response, res) {
-        logger.info(`[BALANCE] balance_pin: ${msisdn}, session: ${session}`);
-
-        const sessionData = await ussdService.getSession(session);
+        this.logger.info(`[BALANCE] balance_pin: ${msisdn}, session: ${session}`);
+        const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            const message = 'Enter your PIN to check balance:\n\n0. Back\n00. Home';
-            return this.sendResponse(res, 'con', message);
+            return this.sendResponse(res, 'con', 'Enter your PIN to check balance:\n\n0. Back\n00. Exit');
         }
 
         if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
+            return await this.handleMenuFlow('balance_pin', response, {}, sessionData, msisdn, session, shortcode, res);
         }
 
-        // Verify PIN first
-        const pinVerified = await this.verifyPIN(customer, response, msisdn, session, shortcode);
-        if (!pinVerified) {
-            return this.sendResponse(res, 'con', 'Invalid PIN. Please try again:\n\n0. Back\n00. Home');
+        if (!await this.verifyPIN(customer, response, msisdn, session, shortcode)) {
+            return this.sendResponse(res, 'con', 'Invalid PIN. Please try again:\n\n0. Back\n00. Exit');
         }
 
-        // Process balance check
         try {
-            const { balanceResponse } = await ussdService.handleBalanceCheck(
+            const { balanceResponse } = await this.ussdService.handleBalanceCheck(
                 customer,
                 sessionData.selected_account,
                 msisdn,
@@ -77,73 +69,29 @@ class BalanceService {
 
                 sessionData.current_menu = 'balance_result';
                 sessionData.balance = balance;
-                await ussdService.saveSession(session, sessionData);
+                await this.ussdService.saveSession(session, sessionData);
 
-                const message = `Account: ${sessionData.selected_account}\nBalance: Ksh ${balance}\n\n0. Back\n00. Home`;
+                const message = `Account: ${sessionData.selected_account}\nBalance: Ksh ${balance}\n\n0. Back\n00. Exit`;
                 return this.sendResponse(res, 'con', message);
             } else {
                 const errorMsg = balanceResponse.DATA || 'Unable to fetch balance';
                 return this.sendResponse(res, 'end', `Sorry, we couldn't retrieve your balance. Error: ${errorMsg}`);
             }
         } catch (error) {
-            logger.error(`[BALANCE] Balance Check Error: ${error.message}`);
+            this.logger.error(`[BALANCE] Balance Check Error: ${error.message}`);
             return this.sendResponse(res, 'end', 'Service temporarily unavailable. Please try again later.');
         }
     }
 
     async balance_result(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
+        const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            const message = `Account: ${sessionData.selected_account}\nBalance: Ksh ${sessionData.balance}\n\n0. Back\n00. Home`;
+            const message = `Account: ${sessionData.selected_account}\nBalance: Ksh ${sessionData.balance}\n\n0. Back\n00. Exit`;
             return this.sendResponse(res, 'con', message);
         }
 
-        return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-    }
-
-    // Helper methods
-    async verifyPIN(customer, pin, msisdn, session, shortcode) {
-        try {
-            const verifiedCustomer = await ussdService.handleLogin(customer, pin, msisdn, session, shortcode);
-            return !!verifiedCustomer;
-        } catch (error) {
-            logger.error(`[BALANCE] PIN Verification Error: ${error.message}`);
-            return false;
-        }
-    }
-
-    async showAccountSelection(sessionData, session, res, nextMenu) {
-        const accounts = sessionData.customer.accounts || [];
-        let accountList = '';
-
-        accounts.forEach((account, index) => {
-            accountList += `${index + 1}. ${account}\n`;
-        });
-
-        sessionData.current_menu = nextMenu;
-        await ussdService.saveSession(session, sessionData);
-
-        const message = `Select account:\n${accountList}\n0. Back\n00. Home`;
-        return this.sendResponse(res, 'con', message);
-    }
-
-    async handleNavigation(response, sessionData, msisdn, session, shortcode, res) {
-        if (response === '0') {
-            // Go back to account services
-            const featureManager = require('./index');
-            return await featureManager.execute('accountServices', 'myaccount', sessionData.customer, msisdn, session, shortcode, null, res);
-        } else if (response === '00') {
-            await ussdService.deleteSession(session);
-            return this.sendResponse(res, 'end', 'Thank you for using Sidian Bank USSD service.');
-        }
-        return this.sendResponse(res, 'con', 'Invalid navigation.');
-    }
-
-    sendResponse(res, type, message) {
-        logger.info(`[BALANCE] ${type.toUpperCase()}: ${message}`);
-        res.set('Content-Type', 'text/plain');
-        return res.send(message);
+        return await this.handleMenuFlow('balance_result', response, {}, sessionData, msisdn, session, shortcode, res);
     }
 }
 

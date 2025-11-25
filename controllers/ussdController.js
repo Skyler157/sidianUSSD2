@@ -29,35 +29,61 @@ class USSDController {
             'fullstatement_result': { feature: 'statementService', method: 'fullstatement_result' },
 
             'beneficiary': { feature: 'beneficiaryService', method: 'beneficiary' },
-            'managewithdrawbeneficiary': { feature: 'beneficiaryService', method: 'manageMpesaBeneficiaries' },
-            'addwithdrawbeneficiary': { feature: 'beneficiaryService', method: 'addMpesaBeneficiary' },
-            'addwithdrawbeneficiaryname': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiaryname' },
-            'addwithdrawbeneficiaryconfirm': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiaryconfirm' },
-            'viewwithdrawbeneficiaries': { feature: 'beneficiaryService', method: 'viewMpesaBeneficiaries' },
-            'deletewithdrawbeneficiary': { feature: 'beneficiaryService', method: 'deleteMpesaBeneficiary' },
+            'managewithdrawbeneficiary': { feature: 'beneficiaryService', method: 'managewithdrawbeneficiary' }, // FIXED
+            'addwithdrawbeneficiary': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiary' }, // FIXED
+            'addwithdrawbeneficiaryname': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiaryname' }, // FIXED
+            'addwithdrawbeneficiaryconfirm': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiaryconfirm' }, // FIXED
+            'viewwithdrawbeneficiaries': { feature: 'beneficiaryService', method: 'viewwithdrawbeneficiaries' }, // FIXED
+            'deletewithdrawbeneficiary': { feature: 'beneficiaryService', method: 'deletewithdrawbeneficiary' }, // FIXED
             'deletebeneficiaryconfirm': { feature: 'beneficiaryService', method: 'deletebeneficiaryconfirm' },
 
             // Mobile Money
+            'mobilemoney': { feature: 'mobileMoney', method: 'mobilemoney' },
             'withdraw': { feature: 'mobileMoney', method: 'withdraw' },
-            'withdrawmsisdn': { feature: 'mobileMoney', method: 'withdrawmsisdn' },
-            'withdrawamount': { feature: 'mobileMoney', method: 'withdrawamount' },
-            'withdrawbankaccount': { feature: 'mobileMoney', method: 'withdrawbankaccount' },
-            'withdrawconfirm': { feature: 'mobileMoney', method: 'withdrawconfirm' },
-            'withdrawpin': { feature: 'mobileMoney', method: 'withdrawpin' },
-
-            // Deposit routes
+            'withdrawmsisdn': { feature: 'mobileMoney', method: 'withdrawOtherNumber' },
+            'withdrawamount': { feature: 'mobileMoney', method: 'withdrawAmount' },
+            'withdrawbankaccount': { feature: 'mobileMoney', method: 'withdrawBankAccount' },
+            'withdrawtransaction': { feature: 'mobileMoney', method: 'withdrawTransaction' },
             'deposit': { feature: 'mobileMoney', method: 'deposit' },
-            'depositbankaccount': { feature: 'mobileMoney', method: 'depositbankaccount' },
-            'depositconfirm': { feature: 'mobileMoney', method: 'depositconfirm' },
+            'depositbankaccount': { feature: 'mobileMoney', method: 'depositBankAccount' },
+            'deposittransaction': {
+                feature: 'mobileMoney', method: 'depositTransaction'
+            },
 
-            // Beneficiary management routes
-            'managewithdrawbeneficiary': { feature: 'mobileMoney', method: 'managewithdrawbeneficiary' },
-            'addwithdrawbeneficiary': { feature: 'mobileMoney', method: 'addwithdrawbeneficiary' },
-            'addwithdrawbeneficiaryname': { feature: 'mobileMoney', method: 'addwithdrawbeneficiaryname' },
-            'addwithdrawbeneficiaryconfirm': { feature: 'mobileMoney', method: 'addwithdrawbeneficiaryconfirm' },
+            'buyfloat': { feature: 'buyfloat', method: 'buyfloat' },
+            'buyfloatstore': { feature: 'buyfloat', method: 'buyfloatstore' },
+            'buyfloatamount': { feature: 'buyfloat', method: 'buyfloatamount' },
+            'buyfloatbankaccount': { feature: 'buyfloat', method: 'buyfloatbankaccount' },
+            'buyfloatremark': { feature: 'buyfloat', method: 'buyfloatremark' },
+            'buyfloattransaction': { feature: 'buyfloat', method: 'buyfloattransaction' },
 
-            // Other Services
+            //Buy Goods
+            'buygoods': { feature: 'buygoods', method: 'buygoods' },
+            'buygoodsconfirm': { feature: 'buygoods', method: 'buygoodsconfirm' },
+            'buygoodsamount': { feature: 'buygoods', method: 'buygoodsamount' },
+            'buygoodsbankaccount': { feature: 'buygoods', method: 'buygoodsbankaccount' },
+            'buygoodsremark': { feature: 'buygoods', method: 'buygoodsremark' },
+            'buygoodstransaction': { feature: 'buygoods', method: 'buygoodstransaction' },
+
+            //Paybill
+            'paybill': { feature: 'paybill', method: 'paybill' },
+            'paybillaccount': { feature: 'paybill', method: 'paybillaccount' },
+            'paybillconfirm': { feature: 'paybill', method: 'paybillconfirm' },
+            'paybillamount': { feature: 'paybill', method: 'paybillamount' },
+            'paybillbankaccount': { feature: 'paybill', method: 'paybillbankaccount' },
+            'paybillremark': { feature: 'paybill', method: 'paybillremark' },
+            'paybilltransaction': { feature: 'paybill', method: 'paybilltransaction' },
+
+            // Airtime routes
             'airtime': { feature: 'airtime', method: 'airtime' },
+            'airtimenetwork': { feature: 'airtime', method: 'airtimenetwork' },
+            'airtimebeneficiary': { feature: 'airtime', method: 'airtimebeneficiary' },
+            'airtimemsisdn': { feature: 'airtime', method: 'airtimemsisdn' },
+            'airtimeamount': { feature: 'airtime', method: 'airtimeamount' },
+            'airtimebankaccount': { feature: 'airtime', method: 'airtimebankaccount' },
+            'airtimetransaction': { feature: 'airtime', method: 'airtimetransaction' },
+
+
             'fundstransfer': { feature: 'fundsTransfer', method: 'fundstransfer' },
             'billpayment': { feature: 'billPayment', method: 'billpayment' },
             'paymerchant': { feature: 'merchantPayment', method: 'paymerchant' },

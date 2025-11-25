@@ -1,19 +1,25 @@
-const ussdService = require('../services/ussdService');
-const logger = require('../services/logger');
+const baseFeature = require('./baseFeature');
+const apiService = require('../services/apiService');
 
-class MobileMoneyFeature {
+class MobileMoneyService extends baseFeature {
     constructor() {
-        this.menus = require('../config/menus.json');
+        super();
+        this.merchantWithdraw = process.env.MERCHANT_WITHDRAW || '006001001';
+        this.merchantDeposit = process.env.MERCHANT_DEPOSIT || 'MPESASTKPUSH';
     }
 
     async mobilemoney(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
         if (!response) {
-            sessionData.current_menu = 'mobilemoney';
-            sessionData.previous_menu = 'mobilebanking';
-            await ussdService.saveSession(session, sessionData);
+            await this.updateSessionMenu(session, 'mobilemoney', 'mobilebanking');
             return this.displayMenu('mobilemoney', res);
+        }
+
+        if (response === '0') {
+            return await this.handleBackToHome(customer, msisdn, session, shortcode, res);
+        }
+
+        if (response === '00') {
+            return await this.handleExit(session, res);
         }
 
         const menuHandlers = {
@@ -21,525 +27,549 @@ class MobileMoneyFeature {
             '2': () => this.deposit(customer, msisdn, session, shortcode, null, res),
             '3': () => this.buyfloat(customer, msisdn, session, shortcode, null, res),
             '4': () => this.buygoods(customer, msisdn, session, shortcode, null, res),
-            '5': () => this.paybill(customer, msisdn, session, shortcode, null, res),
-            '0': () => this.handleNavigation('0', sessionData, msisdn, session, shortcode, res),
-            '00': () => this.handleNavigation('00', sessionData, msisdn, session, shortcode, res)
+            '5': () => this.paybill(customer, msisdn, session, shortcode, null, res)
         };
 
-        return await this.handleMenuNavigation(response, menuHandlers, sessionData, msisdn, session, shortcode, res, 'mobilemoney');
+        if (menuHandlers[response]) {
+            return await menuHandlers[response]();
+        }
+
+        return this.displayMenu('mobilemoney', res, 'Invalid selection. Please try again.\n\n');
     }
 
+    // ========== ACCOUNT TO M-PESA (WITHDRAW) ==========
     async withdraw(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
+        const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            sessionData.current_menu = 'withdraw';
-            sessionData.previous_menu = 'mobilemoney';
-            await ussdService.saveSession(session, sessionData);
+            await this.updateSessionMenu(session, 'withdraw', 'mobilemoney');
             return this.displayMenu('withdraw', res);
+        }
+
+        if (response === '0') {
+            return await this.handleBack(sessionData, 'mobileMoney', 'mobilemoney', msisdn, session, shortcode, res);
+        }
+
+        if (response === '00') {
+            return await this.handleExit(session, res);
         }
 
         const menuHandlers = {
             '1': () => this.withdrawOwnNumber(customer, msisdn, session, shortcode, null, res),
             '2': () => this.withdrawOtherNumber(customer, msisdn, session, shortcode, null, res),
-            '3': () => this.withdrawSavedBeneficiary(customer, msisdn, session, shortcode, null, res),
-            '4': () => this.manageWithdrawBeneficiary(customer, msisdn, session, shortcode, null, res),
-            '0': () => this.handleNavigation('0', sessionData, msisdn, session, shortcode, res),
-            '00': () => this.handleNavigation('00', sessionData, msisdn, session, shortcode, res)
+            '3': () => this.withdrawBeneficiary(customer, msisdn, session, shortcode, null, res)
         };
 
-        return await this.handleMenuNavigation(response, menuHandlers, sessionData, msisdn, session, shortcode, res, 'withdraw');
-    }
+        if (menuHandlers[response]) {
+            // Store withdrawal type for navigation
+            if (response === '1') {
+                sessionData.withdraw_type = 'own';
+                sessionData.withdraw_msisdn = msisdn;
+            } else if (response === '2') {
+                sessionData.withdraw_type = 'other';
+            } else if (response === '3') {
+                sessionData.withdraw_type = 'beneficiary';
+            }
 
-    async withdrawmsisdn(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            sessionData.current_menu = 'withdrawmsisdn';
-            sessionData.previous_menu = 'withdraw';
-            await ussdService.saveSession(session, sessionData);
-
-            const message = 'Enter M-PESA mobile number:\n\n0. Back\n00. Home';
-            return this.sendResponse(res, 'con', message);
+            await this.ussdService.saveSession(session, sessionData);
+            return await menuHandlers[response]();
         }
 
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-        }
-
-        // Validate mobile number
-        const mobileRegex = /^(254|0)?[17]\d{8}$/;
-        let recipientMobile = response;
-
-        // Format mobile number to 254 format
-        if (recipientMobile.startsWith('0')) {
-            recipientMobile = '254' + recipientMobile.substring(1);
-        } else if (!recipientMobile.startsWith('254')) {
-            recipientMobile = '254' + recipientMobile;
-        }
-
-        if (!mobileRegex.test(recipientMobile)) {
-            return this.sendResponse(res, 'con', 'Invalid mobile number. Please enter a valid M-PESA number:\n\n0. Back\n00. Home');
-        }
-
-        sessionData.recipient_mobile = recipientMobile;
-        sessionData.current_menu = 'withdrawamount';
-        await ussdService.saveSession(session, sessionData);
-
-        const message = `Send to: ${recipientMobile}\nEnter amount:\n\n0. Back\n00. Home`;
-        return this.sendResponse(res, 'con', message);
-    }
-
-    async withdrawSavedBeneficiary(customer, msisdn, session, shortcode, response, res) {
-        // Implementation for saved beneficiaries
-        return this.sendResponse(res, 'end', 'Saved beneficiaries feature coming soon.');
-    }
-
-    async manageWithdrawBeneficiary(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            sessionData.current_menu = 'managewithdrawbeneficiary';
-            sessionData.previous_menu = 'withdraw';
-            await ussdService.saveSession(session, sessionData);
-            return this.displayMenu('managewithdrawbeneficiary', res);
-        }
-
-        const menuHandlers = {
-            '1': () => this.addWithdrawBeneficiary(customer, msisdn, session, shortcode, null, res),
-            '2': () => this.viewWithdrawBeneficiaries(customer, msisdn, session, shortcode, null, res),
-            '3': () => this.deleteWithdrawBeneficiary(customer, msisdn, session, shortcode, null, res),
-            '0': () => this.handleNavigation('0', sessionData, msisdn, session, shortcode, res),
-            '00': () => this.handleNavigation('00', sessionData, msisdn, session, shortcode, res)
-        };
-
-        return await this.handleMenuNavigation(response, menuHandlers, sessionData, msisdn, session, shortcode, res, 'managewithdrawbeneficiary');
-    }
-
-    async addWithdrawBeneficiary(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            sessionData.current_menu = 'addwithdrawbeneficiary';
-            sessionData.previous_menu = 'managewithdrawbeneficiary';
-            await ussdService.saveSession(session, sessionData);
-
-            const message = 'Enter M-PESA mobile number:\n\n0. Back\n00. Home';
-            return this.sendResponse(res, 'con', message);
-        }
-
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-        }
-
-        // Validate and store mobile number
-        sessionData.beneficiary_mobile = response;
-        sessionData.current_menu = 'addwithdrawbeneficiaryname';
-        await ussdService.saveSession(session, sessionData);
-
-        const message = 'Enter beneficiary name:\n\n0. Back\n00. Home';
-        return this.sendResponse(res, 'con', message);
-    }
-
-    async addwithdrawbeneficiaryname(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            const message = 'Enter beneficiary name:\n\n0. Back\n00. Home';
-            return this.sendResponse(res, 'con', message);
-        }
-
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-        }
-
-        sessionData.beneficiary_name = response;
-        sessionData.current_menu = 'addwithdrawbeneficiaryconfirm';
-        await ussdService.saveSession(session, sessionData);
-
-        const message = `Save ${response} - ${sessionData.beneficiary_mobile} as beneficiary?\n\n1. Confirm\n2. Cancel\n\n0. Back\n00. Home`;
-        return this.sendResponse(res, 'con', message);
-    }
-
-    async addwithdrawbeneficiaryconfirm(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            const message = `Save ${sessionData.beneficiary_name} - ${sessionData.beneficiary_mobile} as beneficiary?\n\n1. Confirm\n2. Cancel\n\n0. Back\n00. Home`;
-            return this.sendResponse(res, 'con', message);
-        }
-
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-        }
-
-        if (response === '1') {
-            // Save beneficiary logic here
-            return this.sendResponse(res, 'end', 'Beneficiary saved successfully!');
-        } else if (response === '2') {
-            return await this.handleNavigation('0', sessionData, msisdn, session, shortcode, res);
-        } else {
-            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n0. Back\n00. Home');
-        }
-    }
-
-    async viewWithdrawBeneficiaries(customer, msisdn, session, shortcode, response, res) {
-        // Implementation to view saved beneficiaries
-        return this.sendResponse(res, 'end', 'View beneficiaries feature coming soon.');
-    }
-
-    async deleteWithdrawBeneficiary(customer, msisdn, session, shortcode, response, res) {
-        // Implementation to delete beneficiaries
-        return this.sendResponse(res, 'end', 'Delete beneficiary feature coming soon.');
-    }
-
-    async transaction_success(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            const message = `Transaction successful!\n\n0. Back\n00. Home`;
-            return this.sendResponse(res, 'con', message);
-        }
-
-        return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-    }
-
-    async transaction_failed(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            const message = `Transaction failed. Please try again.\n\n0. Back\n00. Home`;
-            return this.sendResponse(res, 'con', message);
-        }
-
-        return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
+        return this.displayMenu('withdraw', res, 'Invalid selection. Please try again.\n\n');
     }
 
     async withdrawOwnNumber(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            sessionData.current_menu = 'withdrawmsisdn';
-            sessionData.previous_menu = 'withdraw';
-            sessionData.recipient_mobile = msisdn; // Use customer's own number
-            await ussdService.saveSession(session, sessionData);
-
-            const message = `Send to your M-PESA: ${msisdn}\nEnter amount:\n\n0. Back\n00. Home`;
-            return this.sendResponse(res, 'con', message);
-        }
-
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-        }
-
-        // Handle amount input
-        const amount = parseFloat(response);
-        if (isNaN(amount) || amount <= 0) {
-            return this.sendResponse(res, 'con', 'Invalid amount. Please enter a valid amount:\n\n0. Back\n00. Home');
-        }
-
-        sessionData.amount = amount;
-        sessionData.current_menu = 'withdrawbankaccount';
-        await ussdService.saveSession(session, sessionData);
-
-        return this.showAccountSelection(sessionData, session, res, 'withdrawbankaccount');
+        // Skip mobile number entry for own number, go directly to amount
+        return await this.withdrawAmount(customer, msisdn, session, shortcode, null, res);
     }
 
     async withdrawOtherNumber(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
+        const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            sessionData.current_menu = 'withdrawmsisdn';
-            sessionData.previous_menu = 'withdraw';
-            await ussdService.saveSession(session, sessionData);
-
-            const message = 'Enter M-PESA mobile number:\n\n0. Back\n00. Home';
-            return this.sendResponse(res, 'con', message);
+            await this.updateSessionMenu(session, 'withdrawmsisdn', 'withdraw');
+            return this.sendResponse(res, 'con', 'Enter the M-PESA mobile number\n\nFormat: 07_ or 01_\n\n0. Back\n00. Exit');
         }
 
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
+        if (response === '0') {
+            // REPLACE handleBack with direct call
+            return await this.withdraw(customer, msisdn, session, shortcode, null, res);
         }
 
-        // Validate mobile number
-        const mobileRegex = /^(254|0)?[17]\d{8}$/;
-        let recipientMobile = response;
-
-        // Format mobile number to 254 format
-        if (recipientMobile.startsWith('0')) {
-            recipientMobile = '254' + recipientMobile.substring(1);
-        } else if (!recipientMobile.startsWith('254')) {
-            recipientMobile = '254' + recipientMobile;
+        if (response === '00') {
+            return await this.handleExit(session, res);
         }
 
-        if (!mobileRegex.test(recipientMobile)) {
-            return this.sendResponse(res, 'con', 'Invalid mobile number. Please enter a valid M-PESA number:\n\n0. Back\n00. Home');
+        if (!this.validateMobileNumber(response)) {
+            return this.sendResponse(res, 'con', 'Invalid mobile number. Please enter a valid M-PESA number (07_ or 01_):\n\n0. Back\n00. Exit');
         }
 
-        sessionData.recipient_mobile = recipientMobile;
-        sessionData.current_menu = 'withdrawamount';
-        await ussdService.saveSession(session, sessionData);
+        // Store the mobile number
+        sessionData.withdraw_msisdn = this.formatMobileNumber(response);
+        await this.ussdService.saveSession(session, sessionData);
 
-        const message = `Send to: ${recipientMobile}\nEnter amount:\n\n0. Back\n00. Home`;
-        return this.sendResponse(res, 'con', message);
+        return await this.withdrawAmount(customer, msisdn, session, shortcode, null, res);
     }
 
-    async withdrawamount(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
+    async withdrawBeneficiary(customer, msisdn, session, shortcode, response, res) {
+        const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            const message = `Send to: ${sessionData.recipient_mobile}\nEnter amount:\n\n0. Back\n00. Home`;
-            return this.sendResponse(res, 'con', message);
+            await this.updateSessionMenu(session, 'withdrawbeneficiary', 'withdraw');
+
+            try {
+                const beneficiaries = await this.getMpesaBeneficiaries(customer, msisdn, session, shortcode);
+
+                if (!beneficiaries || beneficiaries.length === 0) {
+                    const message = 'No saved M-PESA beneficiaries found.\n\n0. Back\n00. Exit';
+                    return this.sendResponse(res, 'con', message);
+                }
+
+                let message = 'Select M-PESA beneficiary:\n\n';
+                beneficiaries.forEach((beneficiary, index) => {
+                    const displayMobile = this.formatDisplayMobile(beneficiary.mobile);
+                    message += `${index + 1}. ${beneficiary.name} (${displayMobile})\n`;
+                });
+
+                message += '\n0. Back\n00. Exit';
+                sessionData.beneficiaries = beneficiaries;
+                await this.ussdService.saveSession(session, sessionData);
+
+                return this.sendResponse(res, 'con', message);
+            } catch (error) {
+                this.logger.error(`[MOBILEMONEY] Get beneficiaries error: ${error.message}`);
+                return this.sendResponse(res, 'con', 'Unable to fetch beneficiaries. Please try again later.\n\n0. Back\n00. Exit');
+            }
         }
 
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
+        if (response === '0') {
+            // REPLACE handleBack with direct call
+            return await this.withdraw(customer, msisdn, session, shortcode, null, res);
         }
 
-        // Handle amount input
-        const amount = parseFloat(response);
-        if (isNaN(amount) || amount <= 0) {
-            return this.sendResponse(res, 'con', 'Invalid amount. Please enter a valid amount:\n\n0. Back\n00. Home');
+        if (response === '00') {
+            return await this.handleExit(session, res);
         }
 
-        sessionData.amount = amount;
-        sessionData.current_menu = 'withdrawbankaccount';
-        await ussdService.saveSession(session, sessionData);
-
-        return this.showAccountSelection(sessionData, session, res, 'withdrawbankaccount');
-    }
-
-    async withdrawbankaccount(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            return this.showAccountSelection(sessionData, session, res, 'withdrawbankaccount');
-        }
-
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-        }
-
-        // Handle account selection
         const selectedIndex = parseInt(response) - 1;
-        const accounts = sessionData.customer.accounts || [];
+        const beneficiaries = sessionData.beneficiaries || [];
+
+        if (beneficiaries[selectedIndex]) {
+            const beneficiary = beneficiaries[selectedIndex];
+            sessionData.withdraw_msisdn = beneficiary.mobile;
+            await this.ussdService.saveSession(session, sessionData);
+
+            return await this.withdrawAmount(customer, msisdn, session, shortcode, null, res);
+        } else {
+            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n0. Back\n00. Exit');
+        }
+    }
+
+    async withdrawAmount(customer, msisdn, session, shortcode, response, res) {
+        const sessionData = await this.ussdService.getSession(session);
+
+        if (!response) {
+            await this.updateSessionMenu(session, 'withdrawamount',
+                sessionData.withdraw_type === 'other' ? 'withdrawmsisdn' :
+                    sessionData.withdraw_type === 'beneficiary' ? 'withdrawbeneficiary' : 'withdraw');
+
+            return this.sendResponse(res, 'con', 'Enter Amount:\n\n0. Back\n00. Exit');
+        }
+
+        if (response === '0') {
+            // REPLACE handleBack with direct calls
+            if (sessionData.withdraw_type === 'other') {
+                return await this.withdrawOtherNumber(customer, msisdn, session, shortcode, null, res);
+            } else if (sessionData.withdraw_type === 'beneficiary') {
+                return await this.withdrawBeneficiary(customer, msisdn, session, shortcode, null, res);
+            } else {
+                return await this.withdraw(customer, msisdn, session, shortcode, null, res);
+            }
+        }
+
+        if (response === '00') {
+            return await this.handleExit(session, res);
+        }
+
+        if (!this.validateAmount(response)) {
+            return this.sendResponse(res, 'con', 'Invalid amount. Please enter a valid amount:\n\n0. Back\n00. Exit');
+        }
+
+        sessionData.withdraw_amount = response;
+        await this.ussdService.saveSession(session, sessionData);
+
+        return await this.withdrawBankAccount(customer, msisdn, session, shortcode, null, res);
+    }
+
+    async withdrawBankAccount(customer, msisdn, session, shortcode, response, res) {
+        const sessionData = await this.ussdService.getSession(session);
+
+        if (!response) {
+            await this.updateSessionMenu(session, 'withdrawbankaccount', 'withdrawamount'); // Make sure this matches
+
+            const accounts = customer.accounts || [];
+            if (accounts.length === 0) {
+                return this.sendResponse(res, 'end', 'No accounts found for this transaction.');
+            }
+
+            let message = 'Select source account:\n\n';
+            accounts.forEach((account, index) => {
+                message += `${index + 1}. ${account}\n`;
+            });
+
+            message += '\n0. Back\n00. Exit';
+            return this.sendResponse(res, 'con', message);
+        }
+
+        if (response === '0') {
+            // FIX: Use the correct method name - withdrawAmount (camelCase)
+            return await this.withdrawAmount(customer, msisdn, session, shortcode, null, res);
+        }
+
+        if (response === '00') {
+            return await this.handleExit(session, res);
+        }
+
+        const selectedIndex = parseInt(response) - 1;
+        const accounts = customer.accounts || [];
 
         if (accounts[selectedIndex]) {
-            const selectedAccount = accounts[selectedIndex];
-            sessionData.selected_account = selectedAccount;
-            sessionData.current_menu = 'withdrawconfirm';
-            await ussdService.saveSession(session, sessionData);
+            sessionData.withdraw_bank_account = accounts[selectedIndex];
+            await this.ussdService.saveSession(session, sessionData);
 
-            const message = `Confirm sending Ksh ${sessionData.amount} to M-PESA ${sessionData.recipient_mobile} from account ${selectedAccount}\n\n1. Confirm\n2. Cancel\n\n0. Back\n00. Home`;
-            return this.sendResponse(res, 'con', message);
+            return await this.withdrawTransaction(customer, msisdn, session, shortcode, null, res);
         } else {
-            return this.sendResponse(res, 'con', 'Invalid account selection. Please try again:\n\n0. Back\n00. Home');
+            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n0. Back\n00. Exit');
         }
     }
 
-    async withdrawconfirm(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
+    async withdrawTransaction(customer, msisdn, session, shortcode, response, res) {
+        const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            const message = `Confirm sending Ksh ${sessionData.amount} to M-PESA ${sessionData.recipient_mobile} from account ${sessionData.selected_account}\n\n1. Confirm\n2. Cancel\n\n0. Back\n00. Home`;
+            await this.updateSessionMenu(session, 'withdrawtransaction', 'withdrawbankaccount');
+
+            const amount = sessionData.withdraw_amount;
+            const bankAccount = sessionData.withdraw_bank_account;
+            const mobileNumber = this.formatDisplayMobile(sessionData.withdraw_msisdn);
+
+            // Get transaction charges
+            const charges = await this.getTransactionCharges(customer, msisdn, session, shortcode, '006001001', amount);
+
+            const message = `Enter PIN to send Ksh ${amount} to M-PESA ${mobileNumber} from account ${bankAccount}\n${charges}\n\n0. Back\n00. Exit`;
             return this.sendResponse(res, 'con', message);
         }
 
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
+        if (response === '0') {
+            // Use direct method call for back navigation
+            return await this.withdrawBankAccount(customer, msisdn, session, shortcode, null, res);
         }
 
-        if (response === '1') {
-            // Confirm withdrawal
-            sessionData.current_menu = 'withdrawpin';
-            await ussdService.saveSession(session, sessionData);
-
-            const message = 'Enter your PIN to confirm transaction:\n\n0. Back\n00. Home';
-            return this.sendResponse(res, 'con', message);
-        } else if (response === '2') {
-            // Cancel transaction
-            return await this.handleNavigation('0', sessionData, msisdn, session, shortcode, res);
-        } else {
-            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n0. Back\n00. Home');
-        }
-    }
-
-    async withdrawpin(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            const message = 'Enter your PIN to confirm transaction:\n\n0. Back\n00. Home';
-            return this.sendResponse(res, 'con', message);
+        if (response === '00') {
+            return await this.handleExit(session, res);
         }
 
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-        }
-
-        // Verify PIN and process withdrawal
-        const pinVerified = await this.verifyPIN(customer, response, msisdn, session, shortcode);
-        if (!pinVerified) {
-            return this.sendResponse(res, 'con', 'Invalid PIN. Please try again:\n\n0. Back\n00. Home');
+        // Validate PIN
+        if (!this.validatePin(response)) {
+            return this.sendResponse(res, 'con', 'Invalid PIN. Please enter a valid 4-digit PIN:\n\n0. Back\n00. Exit');
         }
 
         try {
-            // Process withdrawal
-            const result = await ussdService.handleWithdraw(
-                customer,
-                sessionData.selected_account,
-                sessionData.recipient_mobile,
-                sessionData.amount,
-                response, // PIN
-                msisdn,
-                session,
-                shortcode
-            );
+            const result = await this.processWithdrawTransaction(customer, msisdn, session, shortcode, sessionData, response);
 
-            if (result.STATUS === '000') {
-                const message = `Transaction successful! Ksh ${sessionData.amount} sent to ${sessionData.recipient_mobile}\n\n0. Back\n00. Home`;
-                sessionData.current_menu = 'transaction_success';
-                await ussdService.saveSession(session, sessionData);
-                return this.sendResponse(res, 'con', message);
+            if (result.STATUS === '000' || result.STATUS === 'OK') {
+                // Clear session data
+                this.clearWithdrawSession(session);
+
+                const successMessage = result.DATA || 'Transaction completed successfully';
+                return this.sendResponse(res, 'con', `${successMessage}\n\n0. Back\n00. Exit`);
             } else {
-                const errorMsg = result.DATA || 'Transaction failed';
-                return this.sendResponse(res, 'end', `Transaction failed: ${errorMsg}`);
+                const errorMessage = result.DATA || 'Transaction failed. Please try again.';
+                return this.sendResponse(res, 'end', errorMessage);
             }
         } catch (error) {
-            logger.error(`[MOBILEMONEY] Withdrawal Error: ${error.message}`);
+            this.logger.error(`[MOBILEMONEY] Withdraw transaction error: ${error.message}`);
             return this.sendResponse(res, 'end', 'Service temporarily unavailable. Please try again later.');
         }
     }
 
-    // Add other methods (deposit, buyfloat, etc.) with similar structure
+    // ========== M-PESA TO ACCOUNT (DEPOSIT) ==========
     async deposit(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
+        const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            sessionData.current_menu = 'deposit';
-            sessionData.previous_menu = 'mobilemoney';
-            await ussdService.saveSession(session, sessionData);
+            await this.updateSessionMenu(session, 'deposit', 'mobilemoney');
+            return this.sendResponse(res, 'con', 'Enter Amount:\n\n0. Back\n00. Exit');
+        }
 
-            const message = 'Enter amount to deposit from M-PESA:\n\n0. Back\n00. Home';
+        if (response === '0') {
+            return await this.handleBack(sessionData, 'mobileMoney', 'mobilemoney', msisdn, session, shortcode, res);
+        }
+
+        if (response === '00') {
+            return await this.handleExit(session, res);
+        }
+
+        if (!this.validateAmount(response)) {
+            return this.sendResponse(res, 'con', 'Invalid amount. Please enter a valid amount:\n\n0. Back\n00. Exit');
+        }
+
+        sessionData.deposit_amount = response;
+        await this.ussdService.saveSession(session, sessionData);
+
+        return await this.depositBankAccount(customer, msisdn, session, shortcode, null, res);
+    }
+
+    async depositBankAccount(customer, msisdn, session, shortcode, response, res) {
+        const sessionData = await this.ussdService.getSession(session);
+
+        if (!response) {
+            await this.updateSessionMenu(session, 'depositbankaccount', 'deposit');
+
+            const accounts = customer.accounts || [];
+            if (accounts.length === 0) {
+                return this.sendResponse(res, 'end', 'No accounts found for this transaction.');
+            }
+
+            let message = 'Select account to deposit to:\n\n';
+            accounts.forEach((account, index) => {
+                message += `${index + 1}. ${account}\n`;
+            });
+
+            message += '\n0. Back\n00. Exit';
             return this.sendResponse(res, 'con', message);
         }
 
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
+        if (response === '0') {
+            return await this.handleBack(sessionData, 'mobileMoney', 'deposit', msisdn, session, shortcode, res);
         }
 
-        // Handle amount input
-        const amount = parseFloat(response);
-        if (isNaN(amount) || amount <= 0) {
-            return this.sendResponse(res, 'con', 'Invalid amount. Please enter a valid amount:\n\n0. Back\n00. Home');
+        if (response === '00') {
+            return await this.handleExit(session, res);
         }
 
-        sessionData.amount = amount;
-        sessionData.current_menu = 'depositbankaccount';
-        await ussdService.saveSession(session, sessionData);
+        const selectedIndex = parseInt(response) - 1;
+        const accounts = customer.accounts || [];
 
-        return this.showAccountSelection(sessionData, session, res, 'depositbankaccount');
+        if (accounts[selectedIndex]) {
+            sessionData.deposit_bank_account = accounts[selectedIndex];
+            await this.ussdService.saveSession(session, sessionData);
+
+            return await this.depositTransaction(customer, msisdn, session, shortcode, null, res);
+        } else {
+            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n0. Back\n00. Exit');
+        }
     }
 
-    async depositbankaccount(customer, msisdn, session, shortcode, response, res) {
-        // Similar to withdrawbankaccount but for deposit
-        // Implementation here
+    async depositTransaction(customer, msisdn, session, shortcode, response, res) {
+        const sessionData = await this.ussdService.getSession(session);
+
+        if (!response) {
+            await this.updateSessionMenu(session, 'deposittransaction', 'depositbankaccount');
+
+            const amount = sessionData.deposit_amount;
+            const bankAccount = sessionData.deposit_bank_account;
+            const mobileNumber = this.formatDisplayMobile(msisdn);
+
+            const message = `Confirm you want to deposit Ksh ${amount} to account ${bankAccount} from your M-PESA ${mobileNumber}\n\n1. Confirm\n2. Cancel\n
+            \n00. Exit`;
+            return this.sendResponse(res, 'con', message);
+        }
+
+        if (response === '0') {
+            // Use direct method call for back navigation
+            return await this.depositBankAccount(customer, msisdn, session, shortcode, null, res);
+        }
+
+        if (response === '00') {
+            return await this.handleExit(session, res);
+        }
+
+        if (response === '2') {
+            // Handle Cancel - go back to deposit amount
+            return await this.deposit(customer, msisdn, session, shortcode, null, res);
+        }
+
+        if (response !== '1') {
+            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n1. Confirm\n2. Cancel\n\n00. Exit');
+        }
+
+        try {
+            const result = await this.processDepositTransaction(customer, msisdn, session, shortcode, sessionData);
+
+            // FIX: Handle the success response properly
+            if (result.STATUS === '000' || result.STATUS === 'OK') {
+                // Clear session data
+                this.clearDepositSession(session);
+
+                const successMessage = 'You will receive an M-PESA prompt shortly to complete your deposit. Please check your phone.';
+                return this.sendResponse(res, 'end', successMessage);
+            } else {
+                const errorMessage = result.DATA || 'Transaction failed. Please try again.';
+                return this.sendResponse(res, 'end', errorMessage);
+            }
+        } catch (error) {
+            this.logger.error(`[MOBILEMONEY] Deposit transaction error: ${error.message}`);
+            return this.sendResponse(res, 'end', 'Service temporarily unavailable. Please try again later.');
+        }
+    }
+    async manageWithdrawBeneficiary(customer, msisdn, session, shortcode, response, res) {
+        const beneficiaryService = require('./beneficiaryService');
+        return await beneficiaryService.managewithdrawbeneficiary(customer, msisdn, session, shortcode, response, res);
     }
 
     async buyfloat(customer, msisdn, session, shortcode, response, res) {
-        // Implementation for buy float
-        return this.sendResponse(res, 'end', 'Buy Float service coming soon.');
+        this.logger.info(`[MOBILEMONEY] buyfloat called with response: "${response}"`);
+
+        // If no response, we're entering buyfloat for the first time
+        if (!response) {
+            await this.updateSessionMenu(session, 'buyfloat', 'mobilemoney');
+            const featureManager = require('./index');
+            return await featureManager.execute('buyfloat', 'buyfloat', customer, msisdn, session, shortcode, null, res); // CHANGED: 'buyFloat' → 'buyfloat'
+        }
+
+        // If there's a response, pass it directly to buyfloat feature
+        const featureManager = require('./index');
+        return await featureManager.execute('buyfloat', 'buyfloat', customer, msisdn, session, shortcode, response, res); // CHANGED: 'buyFloat' → 'buyfloat'
     }
 
     async buygoods(customer, msisdn, session, shortcode, response, res) {
-        // Implementation for buy goods
-        return this.sendResponse(res, 'end', 'Buy Goods service coming soon.');
+        const featureManager = require('./index');
+        return await featureManager.execute('buygoods', 'buygoods', customer, msisdn, session, shortcode, response, res);
     }
 
     async paybill(customer, msisdn, session, shortcode, response, res) {
-        // Implementation for paybill
-        return this.sendResponse(res, 'end', 'Paybill service coming soon.');
+        const featureManager = require('./index');
+        return await featureManager.execute('paybill', 'paybill', customer, msisdn, session, shortcode, response, res);
     }
 
-    // Helper methods
-    async handleMenuNavigation(response, handlers, sessionData, msisdn, session, shortcode, res, menuName) {
-        if (handlers[response]) {
-            return await handlers[response]();
-        } else {
-            return this.displayMenu(menuName, res, 'Invalid selection. Please try again.\n\n');
-        }
-    }
+    // ========== HELPER METHODS ==========
+    async getMpesaBeneficiaries(customer, msisdn, session, shortcode) {
+        const formid = 'O-GetUtilityAlias';
+        const data = `FORMID:${formid}:SERVICETYPE:MMONEY:SERVICEID:MPESA:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}`;
 
-    async handleNavigation(response, sessionData, msisdn, session, shortcode, res) {
-        if (response === '0') {
-            // Go back to previous menu
-            const previousMenu = sessionData.previous_menu || 'mobilebanking';
-            sessionData.current_menu = previousMenu;
-            await ussdService.saveSession(session, sessionData);
-
-            const featureManager = require('./index');
-            return await featureManager.execute('navigation', 'mobilebanking', sessionData.customer, msisdn, session, shortcode, null, res);
-        } else if (response === '00') {
-            await ussdService.deleteSession(session);
-            return this.sendResponse(res, 'end', 'Thank you for using Sidian Bank USSD service.');
-        }
-        return this.sendResponse(res, 'con', 'Invalid navigation.');
-    }
-
-    async verifyPIN(customer, pin, msisdn, session, shortcode) {
         try {
-            const verifiedCustomer = await ussdService.handleLogin(customer, pin, msisdn, session, shortcode);
-            return !!verifiedCustomer;
+            const response = await apiService.makeRequest(formid, data, msisdn, session, shortcode);
+
+            if (response.STATUS === '000' || response.STATUS === 'OK') {
+                return this.parseBeneficiaries(response.DATA);
+            } else {
+                this.logger.warn(`[MOBILEMONEY] Get beneficiaries failed: ${response.DATA}`);
+                return [];
+            }
         } catch (error) {
-            logger.error(`[MOBILEMONEY] PIN Verification Error: ${error.message}`);
-            return false;
+            this.logger.error(`[MOBILEMONEY] Get beneficiaries error: ${error.message}`);
+            throw error;
         }
     }
 
-    async showAccountSelection(sessionData, session, res, nextMenu) {
-        const accounts = sessionData.customer.accounts || [];
-        let accountList = '';
+    parseBeneficiaries(data) {
+        if (!data) return [];
 
-        accounts.forEach((account, index) => {
-            accountList += `${index + 1}. ${account}\n`;
+        try {
+            const beneficiaries = [];
+            const items = data.split(';');
+
+            for (const item of items) {
+                if (item.trim()) {
+                    const parts = item.split(',');
+                    if (parts.length >= 2) {
+                        const name = parts[parts.length - 1];
+                        const mobile = parts[parts.length - 2];
+                        if (name && mobile) {
+                            beneficiaries.push({
+                                name: name.trim(),
+                                mobile: mobile.trim(),
+                                type: 'MPESA'
+                            });
+                        }
+                    }
+                }
+            }
+
+            return beneficiaries;
+        } catch (error) {
+            this.logger.error(`[MOBILEMONEY] Parse beneficiaries error: ${error.message}`);
+            return [];
+        }
+    }
+
+    async getTransactionCharges(customer, msisdn, session, shortcode, merchantid, amount) {
+        const formid = 'O-GetBankMerchantCharges';
+        const data = `FORMID:${formid}:MERCHANTID:${merchantid}:AMOUNT:${amount}:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}`;
+
+        try {
+            const response = await apiService.makeRequest(formid, data, msisdn, session, shortcode);
+
+            if (response.STATUS === '000' || response.STATUS === 'OK') {
+                const charge = response.DATA.split('|')[1] || '0';
+                return `Charge: Ksh ${charge}`;
+            }
+        } catch (error) {
+            this.logger.error(`[MOBILEMONEY] Get charges error: ${error.message}`);
+        }
+
+        return 'Charge: Ksh 0';
+    }
+
+    async processWithdrawTransaction(customer, msisdn, session, shortcode, sessionData, pin) {
+        const merchantid = this.merchantWithdraw;
+        const customerid = customer.customerid;
+        const amount = sessionData.withdraw_amount;
+        const accountid = sessionData.withdraw_msisdn;
+        const bankaccountid = sessionData.withdraw_bank_account;
+
+
+        const data = `MERCHANTID:${merchantid}:BANKACCOUNTID:${bankaccountid}:ACCOUNTID:${accountid}:AMOUNT:${amount}:CUSTOMERID:${customerid}:ACTION:PAYBILL:TMPIN:${pin}`;
+
+        this.logger.info(`[MOBILEMONEY] Transaction Details:`, {
+            merchantid,
+            bankaccountid,
+            accountid,
+            amount,
+            customerid,
+            data_payload: data
         });
 
-        sessionData.current_menu = nextMenu;
-        await ussdService.saveSession(session, sessionData);
-
-        const message = `Select account:\n${accountList}\n0. Back\n00. Home`;
-        return this.sendResponse(res, 'con', message);
+        return await apiService.makeRequest('M-', data, msisdn, session, shortcode);
     }
 
-    displayMenu(menuKey, res, prefix = '') {
-        const menu = this.menus[menuKey];
-        if (!menu) {
-            logger.error(`Menu not found: ${menuKey}`);
-            return this.sendResponse(res, 'end', 'System error. Menu not found.');
-        }
+    async processDepositTransaction(customer, msisdn, session, shortcode, sessionData) {
+        const merchantid = 'MPESASTKPUSH';
+        const customerid = customer.customerid;
+        const amount = sessionData.deposit_amount;
+        const bankaccountid = sessionData.deposit_bank_account;
 
-        let message = prefix + menu.message;
-        if (menu.type === 'menu' && menu.options) {
-            message += '\n';
-            const desiredOrder = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '00'];
-            desiredOrder.forEach(key => {
-                if (menu.options[key]) {
-                    message += `${key}. ${menu.options[key]}\n`;
-                }
-            });
-            message = message.trim();
-        }
+        // Remove the duplicate FORMID:M-: from the beginning
+        const data = `MERCHANTID:${merchantid}:BANKACCOUNTID:${bankaccountid}:ACCOUNTID:${bankaccountid}:AMOUNT:${amount}:CUSTOMERID:${customerid}:MOBILENUMBER:${msisdn}:INFOFIELD9:${msisdn}:ACTION:DEPOSIT`;
 
-        return this.sendResponse(res, menu.type === 'end' ? 'end' : 'con', message);
+        this.logger.info(`[MOBILEMONEY] Processing deposit transaction: ${JSON.stringify(sessionData)}`);
+        return await apiService.makeRequest('M-', data, msisdn, session, shortcode);
     }
 
-    sendResponse(res, type, message) {
-        const messageSize = Buffer.byteLength(message, 'utf8');
-        logger.info(`MOBILE_MONEY_MENU{${type}}: ${message}`);
-        logger.info(`MOBILE_MONEY_MENU SIZE: ${messageSize} bytes`);
+    clearWithdrawSession(session) {
+        this.ussdService.getSession(session).then(sessionData => {
+            delete sessionData.withdraw_type;
+            delete sessionData.withdraw_msisdn;
+            delete sessionData.withdraw_amount;
+            delete sessionData.withdraw_bank_account;
+            delete sessionData.beneficiaries;
+            this.ussdService.saveSession(session, sessionData);
+        });
+    }
 
-        res.set('Content-Type', 'text/plain');
-        return res.send(message);
+    clearDepositSession(session) {
+        this.ussdService.getSession(session).then(sessionData => {
+            delete sessionData.deposit_amount;
+            delete sessionData.deposit_bank_account;
+            this.ussdService.saveSession(session, sessionData);
+        });
+    }
+
+    async handleBackToHome(customer, msisdn, session, shortcode, res) {
+        const featureManager = require('./index');
+        return await featureManager.execute('navigation', 'mobilebanking', customer, msisdn, session, shortcode, null, res);
     }
 }
 
-module.exports = new MobileMoneyFeature();
+module.exports = new MobileMoneyService();

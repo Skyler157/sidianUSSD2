@@ -9,19 +9,28 @@ class FeatureManager {
     loadFeatures() {
         try {
             // Load all feature modules
-            this.features.set('authentication', require('./authentication'));
-            this.features.set('navigation', require('./navigation'));
-            this.features.set('accountServices', require('./accountServices'));
-            this.features.set('balanceService', require('./balance'));
-            this.features.set('statementService', require('./statement'));
-            this.features.set('beneficiaryService', require('./beneficiary'));
-            this.features.set('mobileMoney', require('./mobilemoney'));
-            this.features.set('airtime', require('./airtime'));
-            this.features.set('fundsTransfer', require('./fundstransfer'));
-            this.features.set('billPayment', require('./billPayment'));
-            this.features.set('merchantPayment', require('./merchantPayment'));
-            this.features.set('termDeposits', require('./termDeposits'));
-            this.features.set('pinManagement', require('./pinManagement'));
+            const features = {
+                'authentication': require('./authentication'),
+                'navigation': require('./navigation'),
+                'accountServices': require('./accountServices'),
+                'balanceService': require('./balance'),
+                'statementService': require('./statement'),
+                'beneficiaryService': require('./beneficiary'),
+                'mobileMoney': require('./mobilemoney'),
+                'buyfloat': require('./buyfloat'),
+                'buygoods': require('./buygoods'),
+                'paybill': require('./paybill'),
+                'airtime': require('./airtime'),
+                'fundsTransfer': require('./fundstransfer'),
+                'billPayment': require('./billPayment'),
+                'merchantPayment': require('./merchantPayment'),
+                'termDeposits': require('./termDeposits'),
+                'pinManagement': require('./pinManagement')
+            };
+
+            Object.entries(features).forEach(([name, feature]) => {
+                this.features.set(name, feature);
+            });
 
             logger.info(`[FEATURES] Loaded ${this.features.size} features successfully`);
         } catch (error) {
@@ -29,10 +38,7 @@ class FeatureManager {
         }
     }
 
-    isReady() {
-        return this.features.size > 0;
-    }
-
+    // ... rest remains the same
     getFeature(featureName) {
         const feature = this.features.get(featureName);
         if (!feature) {
