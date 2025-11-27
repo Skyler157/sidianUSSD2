@@ -59,17 +59,14 @@ class PaybillService extends baseFeature {
         }
 
         try {
-            // Validate paybill and account with external API
             const validationResult = await this.validatePaybillAndAccount(customer, msisdn, session, shortcode, sessionData.paybill_number, response);
 
             if (validationResult.STATUS === '000' || validationResult.STATUS === 'OK') {
                 const paybillName = this.cleanPaybillName(validationResult.DATA);
 
-                // CRITICAL FIX: Save ALL session data properly
-                sessionData.paybill_account = response;  // Save account number
-                sessionData.paybill_name = paybillName;  // Save paybill name
+                sessionData.paybill_account = response;  
+                sessionData.paybill_name = paybillName;  
 
-                // Update session menu AND save session data
                 await this.updateSessionMenu(session, 'paybillconfirm', 'paybillaccount');
 
                 const message = `Confirm PayBill Name\n\n${paybillName}\n\n1. Confirm\n0. Back\n00. Exit`;
@@ -102,7 +99,6 @@ class PaybillService extends baseFeature {
         }
 
         if (response === '1') {
-            // User confirmed paybill name - UPDATE SESSION
             await this.updateSessionMenu(session, 'paybillamount', 'paybillconfirm');
             return await this.paybillamount(customer, msisdn, session, shortcode, null, res);
         } else {
@@ -206,7 +202,6 @@ class PaybillService extends baseFeature {
     async paybilltransaction(customer, msisdn, session, shortcode, response, res) {
         const sessionData = await this.ussdService.getSession(session);
 
-        // DEBUG: Log all session data
         this.logger.info(`[PAYBILL-DEBUG] Session data: ${JSON.stringify({
             paybill_number: sessionData.paybill_number,
             paybill_account: sessionData.paybill_account,
@@ -226,17 +221,13 @@ class PaybillService extends baseFeature {
             const accountNumber = sessionData.paybill_account || 'Unknown Account';
             const remark = sessionData.paybill_remark;
 
-            // Get transaction charges
             const charges = await this.getTransactionCharges(customer, msisdn, session, shortcode, this.merchantTransaction, amount);
 
             const message = `Enter PIN to pay Ksh ${amount} to ${paybillName} account number ${accountNumber} from account ${bankAccount}. Remark: ${remark}\n${charges}\n\n0. Back\n00. Exit`;
             return this.sendResponse(res, 'con', message);
         }
-
-        // ... rest of the method remains the same
     }
 
-    // ========== HELPER METHODS ==========
 
     async validatePaybillAndAccount(customer, msisdn, session, shortcode, paybillNumber, accountNumber) {
         const customerid = customer.customerid;
@@ -270,17 +261,14 @@ class PaybillService extends baseFeature {
     }
 
     validatePaybillNumber(paybillNumber) {
-        // PayBill numbers are typically numeric
         return /^\d+$/.test(paybillNumber) && paybillNumber.length >= 4 && paybillNumber.length <= 10;
     }
 
     validateAccountNumber(accountNumber) {
-        // Account numbers can be alphanumeric
         return /^[a-zA-Z0-9]+$/.test(accountNumber) && accountNumber.length >= 1 && accountNumber.length <= 20;
     }
 
     cleanPaybillName(paybillName) {
-        // Clean up paybill name - remove extra spaces and trim
         if (!paybillName) return 'Unknown PayBill';
         return paybillName.replace(/\s+/g, ' ').trim();
     }

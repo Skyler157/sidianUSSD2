@@ -41,7 +41,6 @@ class BuyFloatService extends baseFeature {
             return this.sendResponse(res, 'con', 'Enter Store Number\n\n0. Back\n00. Exit');
         }
 
-        // Check if we're in error state
         if (sessionData.buyfloatstore_error) {
             if (response === '0') {
                 delete sessionData.buyfloatstore_error;
@@ -53,7 +52,6 @@ class BuyFloatService extends baseFeature {
             }
         }
 
-        // Check if we're in confirmation state
         if (sessionData.buyfloatstore_confirmed) {
             if (response === '1') {
                 return await this.buyfloatamount(customer, msisdn, session, shortcode, null, res);
@@ -250,8 +248,6 @@ class BuyFloatService extends baseFeature {
         }
     }
 
-    // ========== HELPER METHODS ==========
-
     async validateAgentAndStore(customer, msisdn, session, shortcode, agentNumber, storeNumber) {
         const customerid = customer.customerid;
         const data = `MERCHANTID:${this.merchantValidation}:ACCOUNTID:${agentNumber}:INFOFIELD1:4:INFOFIELD5:${agentNumber}:CUSTOMERID:${customerid}:MOBILENUMBER:${msisdn}:ACTION:GETNAME`;
@@ -284,17 +280,14 @@ class BuyFloatService extends baseFeature {
     }
 
     validateAgentNumber(agentNumber) {
-        // Agent numbers are typically mobile numbers or specific agent codes
         return /^\d+$/.test(agentNumber) && agentNumber.length >= 8 && agentNumber.length <= 15;
     }
 
     validateStoreNumber(storeNumber) {
-        // Store numbers can be alphanumeric
         return /^[a-zA-Z0-9]+$/.test(storeNumber) && storeNumber.length >= 1 && storeNumber.length <= 20;
     }
 
     cleanAgentName(agentName) {
-        // Clean up agent name - remove extra spaces and trim
         if (!agentName) return 'Unknown Agent';
         return agentName.replace(/\s+/g, ' ').trim();
     }

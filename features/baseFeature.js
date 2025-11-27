@@ -8,7 +8,6 @@ class baseFeature {
         this.logger = logger;
     }
 
-    // Common response handling
     sendResponse(res, type, message) {
         const messageSize = Buffer.byteLength(message, 'utf8');
         const featureName = this.constructor.name.replace('Feature', '').replace('Service', '');
@@ -19,7 +18,6 @@ class baseFeature {
         return res.send(message);
     }
 
-    // Common menu display
     displayMenu(menuKey, res, prefix = '') {
         const menu = this.menus[menuKey];
         if (!menu) {
@@ -33,6 +31,9 @@ class baseFeature {
             const desiredOrder = ['1', '2', '3', '4', '5', '6', '7', '8', '0', '00'];
             desiredOrder.forEach(key => {
                 if (menu.options[key]) {
+                    if (key === '0') {
+                        message += '\n'; 
+                    }
                     message += `${key}. ${menu.options[key]}\n`;
                 }
             });
@@ -45,7 +46,6 @@ class baseFeature {
     async handleBack(sessionData, targetFeature, targetMethod, msisdn, session, shortcode, res) {
         this.logger.info(`[NAVIGATION] Handling back from ${sessionData.current_menu} to ${targetMethod} via ${targetFeature}`);
 
-        // Use the back navigation mapping from this class
         const backFeature = this.getBackFeature(sessionData.current_menu);
         const backMethod = this.getBackMethod(sessionData.current_menu);
 
@@ -55,6 +55,9 @@ class baseFeature {
         await this.ussdService.saveSession(session, sessionData);
 
         const featureManager = require('./index');
+
+        this.logger.info(`[NAVIGATION DEBUG] Executing: ${backFeature}.${backMethod}`);
+
         return await featureManager.execute(backFeature, backMethod, sessionData.customer, msisdn, session, shortcode, null, res);
     }
 
@@ -63,7 +66,6 @@ class baseFeature {
         return this.sendResponse(res, 'end', 'Thank you for using Sidian Bank USSD service.');
     }
 
-    // Common menu navigation
     async handleMenuFlow(menuKey, response, menuHandlers, sessionData, msisdn, session, shortcode, res) {
         if (response === '0') {
             return await this.handleBack(sessionData,
@@ -83,7 +85,7 @@ class baseFeature {
         }
     }
 
-    // Common session management
+
     async updateSessionMenu(session, currentMenu, previousMenu) {
         const sessionData = await this.ussdService.getSession(session);
         if (!sessionData) {
@@ -91,14 +93,12 @@ class baseFeature {
             return null;
         }
 
-        // ADD DEBUG LOGGING
         this.logger.info(`[SESSION DEBUG] BEFORE UPDATE - Current menu: ${sessionData.current_menu}, Previous menu: ${sessionData.previous_menu}`);
 
         sessionData.current_menu = currentMenu;
         sessionData.previous_menu = previousMenu;
         await this.ussdService.saveSession(session, sessionData);
 
-        // Verify the update
         const verifySession = await this.ussdService.getSession(session);
         this.logger.info(`[SESSION DEBUG] AFTER UPDATE - Current menu: ${verifySession.current_menu}, Previous menu: ${verifySession.previous_menu}`);
 
@@ -106,7 +106,7 @@ class baseFeature {
         return sessionData;
     }
 
-    // Common input validation
+
     validateMobileNumber(mobile) {
         const mobileRegex = /^(254|0)?[17]\d{8}$/;
         return mobileRegex.test(this.formatMobileNumber(mobile));
@@ -140,7 +140,7 @@ class baseFeature {
         return /^\d{4}$/.test(pin);
     }
 
-    // Account selection helper
+
     async showAccountSelection(sessionData, session, res, nextMenu, messagePrefix = 'Select account:') {
         const accounts = sessionData.customer.accounts || [];
 
@@ -160,7 +160,6 @@ class baseFeature {
         return this.sendResponse(res, 'con', message);
     }
 
-    // PIN verification helper
     async verifyPIN(customer, pin, msisdn, session, shortcode) {
         try {
             const verifiedCustomer = await this.ussdService.handleLogin(customer, pin, msisdn, session, shortcode);
@@ -264,6 +263,56 @@ class baseFeature {
             'banktrasferremark': 'fundsTransfer',
             'banktrasfertransaction': 'fundsTransfer',
 
+            'billpayment': 'navigation',
+            'zuku': 'billPayment',
+            'billmeter': 'billPayment',
+            'billamount': 'billPayment',
+            'billbankaccount': 'billPayment',
+            'billtransaction': 'billPayment',
+
+            // Zuku sub-services
+            'zukusatellite': 'zuku',
+            'zukutrippleplay': 'zuku',
+            'zukusatellite_account': 'zukusatellite',
+            'zukutrippleplay_account': 'zukutrippleplay',
+            'zukusatellite_amount': 'zukusatellite_account',
+            'zukutrippleplay_amount': 'zukutrippleplay_account',
+            'zukusatellite_account_selection': 'zukusatellite_amount',
+            'zukutrippleplay_account_selection': 'zukutrippleplay_amount',
+            'zukusatellite_confirm': 'zukusatellite_account_selection',
+            'zukutrippleplay_confirm': 'zukutrippleplay_account_selection',
+
+            // DStv
+            'dstv_account': 'billPayment',
+            'dstv_amount': 'billPayment',
+            'dstv_account_selection': 'billPayment',
+            'dstv_confirm': 'billPayment',
+
+            // GOtv
+            'gotv_account': 'billPayment',
+            'gotv_amount': 'gotv_account',
+            'gotv_account_selection': 'gotv_amount',
+            'gotv_confirm': 'gotv_account_selection',
+
+            // StarTimes
+            'startimes_account': 'billPayment',
+            'startimes_amount': 'startimes_account',
+            'startimes_account_selection': 'startimes_amount',
+            'startimes_confirm': 'startimes_account_selection',
+
+            // Nairobi Water
+            'nairobiwater_account': 'billPayment',
+            'nairobiwater_amount': 'nairobiwater_account',
+            'nairobiwater_account_selection': 'nairobiwater_amount',
+            'nairobiwater_confirm': 'nairobiwater_account_selection',
+
+            // JTL
+            'jtl_account': 'billPayment',
+            'jtl_amount': 'jtl_account',
+            'jtl_account_selection': 'jtl_amount',
+            'jtl_confirm': 'jtl_account_selection',
+
+
             'changepin': 'navigation',
             'default': 'navigation'
         };
@@ -362,6 +411,57 @@ class baseFeature {
             'banktrasferbankaccount': 'banktrasfermount',
             'banktrasferremark': 'banktrasferbankaccount',
             'banktrasfertransaction': 'banktrasferremark',
+
+            // Bill Payment back navigation  
+            'billpayment': 'mobilebanking',
+            'zuku': 'billpayment',
+            'billmeter': 'zuku',
+            'billamount': 'billmeter',
+            'billbankaccount': 'billamount',
+            'billtransaction': 'billbankaccount',
+
+            // Zuku sub-services
+            'zukusatellite': 'zuku',
+            'zukutrippleplay': 'zuku',
+            'zukusatellite_account': 'zukusatellite',
+            'zukutrippleplay_account': 'zukutrippleplay',
+            'zukusatellite_amount': 'zukusatellite_account',
+            'zukutrippleplay_amount': 'zukutrippleplay_account',
+            'zukusatellite_account_selection': 'zukusatellite_amount',
+            'zukutrippleplay_account_selection': 'zukutrippleplay_amount',
+            'zukusatellite_confirm': 'zukusatellite_account_selection',
+            'zukutrippleplay_confirm': 'zukutrippleplay_account_selection',
+
+            // DStv
+            'dstv_account': 'billpayment',
+            'dstv_amount': 'dstv_account',
+            'dstv_account_selection': 'dstv_amount',
+            'dstv_confirm': 'billPayment',
+
+            // GOtv
+            'gotv_account': 'billpayment',
+            'gotv_amount': 'gotv_account',
+            'gotv_account_selection': 'gotv_amount',
+            'gotv_confirm': 'gotv_account_selection',
+
+            // StarTimes
+            'startimes_account': 'billpayment',
+            'startimes_amount': 'startimes_account',
+            'startimes_account_selection': 'startimes_amount',
+            'startimes_confirm': 'startimes_account_selection',
+
+            // Nairobi Water
+            'nairobiwater_account': 'billpayment',
+            'nairobiwater_amount': 'nairobiwater_account',
+            'nairobiwater_account_selection': 'nairobiwater_amount',
+            'nairobiwater_confirm': 'nairobiwater_account_selection',
+
+            // JTL
+            'jtl_account': 'billpayment',
+            'jtl_amount': 'jtl_account',
+            'jtl_account_selection': 'jtl_amount',
+            'jtl_confirm': 'jtl_account_selection',
+
 
             'changepin': 'mobilebanking',
             'default': 'mobilebanking'

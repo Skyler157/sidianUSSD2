@@ -35,7 +35,6 @@ class ApiService {
 
         logger.info(`CLEANED RESPONSE: ${response}`);
 
-        // Handle deposit success response format: "000:20251125153809"
         if (response.startsWith('000:')) {
             return { STATUS: '000', DATA: 'Deposit initiated successfully' };
         }
@@ -46,7 +45,6 @@ class ApiService {
             return { STATUS: '999', DATA: 'Transaction failed. Please try again later.' };
         }
 
-        // Check if response has proper key-value format
         if (!response.includes(':')) {
             logger.error(`API returned malformed response: ${response}`);
             return { STATUS: '999', DATA: 'Service temporarily unavailable' };

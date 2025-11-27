@@ -482,7 +482,6 @@ class BankTransferFeature extends baseFeature {
     }
 }
 
-// Create instance and export methods
 const bankTransferInstance = new BankTransferFeature();
 
 module.exports = {

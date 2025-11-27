@@ -8,7 +8,7 @@ const cluster = new Redis.Cluster(
     ],
     {
         redisOptions: {
-            password: process.env.REDIS_PASSWORD, // <- add your password
+            password: process.env.REDIS_PASSWORD, 
             connectTimeout: 10000,
             retryStrategy: times => Math.min(times * 50, 2000)
         }

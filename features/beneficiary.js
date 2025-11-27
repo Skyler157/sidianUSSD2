@@ -8,11 +8,11 @@ class BeneficiaryService extends baseFeature {
     async beneficiary(customer, msisdn, session, shortcode, response, res) {
         if (!response) {
             await this.updateSessionMenu(session, 'beneficiary', 'myaccount');
-            return this.displayMenu('beneficiary', res); // This shows "1. M-PESA"
+            return this.displayMenu('beneficiary', res); 
         }
 
         const menuHandlers = {
-            '1': () => this.managewithdrawbeneficiary(customer, msisdn, session, shortcode, null, res) // Pass null as response to show menu
+            '1': () => this.managewithdrawbeneficiary(customer, msisdn, session, shortcode, null, res) 
         };
 
         return await this.handleMenuFlow('beneficiary', response, menuHandlers,
@@ -22,13 +22,11 @@ class BeneficiaryService extends baseFeature {
     async managewithdrawbeneficiary(customer, msisdn, session, shortcode, response, res) {
         const sessionData = await this.ussdService.getSession(session);
 
-        // If no response, show the M-PESA beneficiary management menu
         if (!response) {
             await this.updateSessionMenu(session, 'managewithdrawbeneficiary', 'beneficiary');
             return this.displayMenu('managewithdrawbeneficiary', res);
         }
 
-        // Handle menu selections
         if (response === '0') {
             return await this.handleBack(sessionData, 'beneficiaryService', 'beneficiary',
                 msisdn, session, shortcode, res);
@@ -38,7 +36,6 @@ class BeneficiaryService extends baseFeature {
             return await this.handleExit(session, res);
         }
 
-        // Define menu handlers with proper menu names
         const menuHandlers = {
             '1': {
                 method: () => this.addwithdrawbeneficiary(customer, msisdn, session, shortcode, null, res),
@@ -54,13 +51,11 @@ class BeneficiaryService extends baseFeature {
             }
         };
 
-        // Check if it's a valid menu option
+
         if (menuHandlers[response]) {
-            // Update session menu to the correct menu name
             await this.updateSessionMenu(session, menuHandlers[response].menu, 'managewithdrawbeneficiary');
             return await menuHandlers[response].method();
         } else {
-            // Invalid option, show menu again
             return this.displayMenu('managewithdrawbeneficiary', res, 'Invalid selection. Please try again:\n\n');
         }
     }
@@ -70,7 +65,6 @@ class BeneficiaryService extends baseFeature {
 
         if (!response) {
             await this.updateSessionMenu(session, 'addwithdrawbeneficiary', 'managewithdrawbeneficiary');
-            // Add back/exit options to input screens
             const message = "Enter the M-PESA mobile number\n\nFormat: 07_ or 01_\n\n0. Back\n00. Exit";
             return this.sendResponse(res, 'con', message);
         }
@@ -101,7 +95,6 @@ class BeneficiaryService extends baseFeature {
 
         if (!response) {
             await this.updateSessionMenu(session, 'addwithdrawbeneficiaryname', 'addwithdrawbeneficiary');
-            // Add back/exit options
             const message = "Enter beneficiary name\n\n0. Back\n00. Exit";
             return this.sendResponse(res, 'con', message);
         }
@@ -133,7 +126,6 @@ class BeneficiaryService extends baseFeature {
             await this.updateSessionMenu(session, 'viewwithdrawbeneficiaries', 'managewithdrawbeneficiary');
 
             try {
-                // Get beneficiaries from API
                 const result = await this.ussdService.getInternalTransferBeneficiaries(
                     customer, msisdn, session, shortcode
                 );
@@ -176,8 +168,6 @@ class BeneficiaryService extends baseFeature {
             return await this.handleExit(session, res);
         }
 
-        // If user enters any other number (1, 2, etc.), just show the same view again
-        // This prevents accidental navigation when user tries to select a beneficiary
         return await this.viewwithdrawbeneficiaries(customer, msisdn, session, shortcode, null, res);
     }
 
@@ -195,7 +185,6 @@ class BeneficiaryService extends baseFeature {
             await this.updateSessionMenu(session, 'deletewithdrawbeneficiary', 'managewithdrawbeneficiary');
 
             try {
-                // Get beneficiaries from API
                 const result = await this.ussdService.getInternalTransferBeneficiaries(
                     customer, msisdn, session, shortcode
                 );
@@ -208,11 +197,10 @@ class BeneficiaryService extends baseFeature {
                     const beneficiaries = this.parseBeneficiaries(result.DATA);
                     this.logger.info(`[BENEFICIARY] Parsed beneficiaries for delete: ${JSON.stringify(beneficiaries)}`);
 
-                    // Save to session and verify it was saved
+
                     sessionData.beneficiaries = beneficiaries;
                     await this.ussdService.saveSession(session, sessionData);
 
-                    // Verify the save worked
                     const verifySession = await this.ussdService.getSession(session);
                     this.logger.info(`[BENEFICIARY] Verified session beneficiaries: ${JSON.stringify(verifySession.beneficiaries)}`);
 
@@ -238,7 +226,6 @@ class BeneficiaryService extends baseFeature {
         } else {
             this.logger.info(`[BENEFICIARY DEBUG] Processing selection: ${response}`);
 
-            // Refresh session data
             sessionData = await this.ussdService.getSession(session);
 
             if (response === '0') {
@@ -252,7 +239,6 @@ class BeneficiaryService extends baseFeature {
                 return await this.handleExit(session, res);
             }
 
-            // Process beneficiary selection
             const beneficiaryIndex = parseInt(response) - 1;
             const beneficiaries = sessionData.beneficiaries || [];
 
@@ -306,7 +292,6 @@ class BeneficiaryService extends baseFeature {
         try {
             const [account, alias] = sessionData.selectedBeneficiary || ['', ''];
 
-            // Call API to delete beneficiary
             const result = await this.ussdService.deleteInternalTransferBeneficiary(
                 customer,
                 account,
@@ -314,7 +299,6 @@ class BeneficiaryService extends baseFeature {
                 msisdn, session, shortcode
             );
 
-            // Clear session data
             delete sessionData.selectedBeneficiary;
             delete sessionData.beneficiaries;
             await this.ussdService.saveSession(session, sessionData);
@@ -336,23 +320,18 @@ class BeneficiaryService extends baseFeature {
         try {
             const beneficiaries = [];
             if (data && typeof data === 'string') {
-                this.logger.info(`[BENEFICIARY] Raw data to parse: "${data}"`);
+                this.logger.info(`[BENEFICIARY] Data: "${data}"`);
 
-                // Split by ~ and filter out empty items
                 const items = data.split('~').filter(item => item.trim() && item !== '|' && item !== '');
 
                 for (const item of items) {
                     this.logger.info(`[BENEFICIARY] Processing item: "${item}"`);
 
-                    // Split by | and filter out empty parts
                     const parts = item.split('|').filter(part => part.trim());
-
-                    // We need at least account and name
                     if (parts.length >= 2) {
                         const account = parts[0].trim();
                         const alias = parts[1].trim();
 
-                        // Only add if both account and alias have values
                         if (account && alias) {
                             beneficiaries.push([account, alias]);
                             this.logger.info(`[BENEFICIARY] Added beneficiary: ${account} - ${alias}`);

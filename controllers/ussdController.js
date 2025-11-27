@@ -74,7 +74,7 @@ class USSDController {
             'paybillremark': { feature: 'paybill', method: 'paybillremark' },
             'paybilltransaction': { feature: 'paybill', method: 'paybilltransaction' },
 
-            // Airtime routes
+            // Airtime 
             'airtime': { feature: 'airtime', method: 'airtime' },
             'airtimenetwork': { feature: 'airtime', method: 'airtimenetwork' },
             'airtimebeneficiary': { feature: 'airtime', method: 'airtimebeneficiary' },
@@ -83,7 +83,7 @@ class USSDController {
             'airtimebankaccount': { feature: 'airtime', method: 'airtimebankaccount' },
             'airtimetransaction': { feature: 'airtime', method: 'airtimetransaction' },
 
-
+            // Funds Transfer 
             'fundstransfer': { feature: 'fundsTransfer', method: 'fundstransfer' },
             'internaltransfer': { feature: 'fundsTransfer', method: 'internaltransfer' },
             'internaltransferbankaccount': { feature: 'fundsTransfer', method: 'internaltransferbankaccount' },
@@ -92,8 +92,6 @@ class USSDController {
             'internaltransferremark': { feature: 'fundsTransfer', method: 'internaltransferremark' },
             'internaltransfertransaction': { feature: 'fundsTransfer', method: 'internaltransfertransaction' },
             'internaltransferotheraccount': { feature: 'fundsTransfer', method: 'internaltransferotheraccount' },
-            'internaltransferbeneficiary': { feature: 'fundsTransfer', method: 'internaltransferbeneficiary' },
-            'manageinternaltransferbeneficiary': { feature: 'fundsTransfer', method: 'manageinternaltransferbeneficiary' },
 
             // Card Transfer Routes
             'cardtransfer': { feature: 'fundsTransfer', method: 'cardtransfer' },
@@ -116,26 +114,60 @@ class USSDController {
             'banktrasferremark': { feature: 'fundsTransfer', method: 'banktrasferremark' },
             'banktrasfertransaction': { feature: 'fundsTransfer', method: 'banktrasfertransaction' },
 
-            // Beneficiary Management Routes
-            'addinternaltransferbeneficiary': { feature: 'fundsTransfer', method: 'addinternaltransferbeneficiary' },
-            'addinternaltransferbeneficiaryname': { feature: 'fundsTransfer', method: 'addinternaltransferbeneficiaryname' },
-            'addinternaltransferbeneficiarytransaction': { feature: 'fundsTransfer', method: 'addinternaltransferbeneficiarytransaction' },
-            'viewinternaltransferbeneficiary': { feature: 'fundsTransfer', method: 'viewinternaltransferbeneficiary' },
-            'viewinternaltransferbeneficiarytransaction': { feature: 'fundsTransfer', method: 'viewinternaltransferbeneficiarytransaction' },
-            'deleteinternaltransferbeneficiary': { feature: 'fundsTransfer', method: 'deleteinternaltransferbeneficiary' },
-            'deleteinternaltransferbeneficiarytransaction': { feature: 'fundsTransfer', method: 'deleteinternaltransferbeneficiarytransaction' },
 
-
-
+            // Bill Payment Routes
             'billpayment': { feature: 'billPayment', method: 'billpayment' },
-            'paymerchant': { feature: 'merchantPayment', method: 'paymerchant' },
+            'zuku': { feature: 'billPayment', method: 'zuku' },
+            'billmeter': { feature: 'billPayment', method: 'billmeter' },
+            'billamount': { feature: 'billPayment', method: 'billamount' },
+            'billbankaccount': { feature: 'billPayment', method: 'billbankaccount' },
+            'billtransaction': { feature: 'billPayment', method: 'billtransaction' },
 
-            // New Features
-            'termdeposits': { feature: 'termDeposits', method: 'termdeposits' },
-            'termdepositstenure': { feature: 'termDeposits', method: 'termdepositstenure' },
-            'termdepositsamount': { feature: 'termDeposits', method: 'termdepositsamount' },
-            'termdepositsbankaccount': { feature: 'termDeposits', method: 'termdepositsbankaccount' },
-            'termdepositstransaction': { feature: 'termDeposits', method: 'termdepositstransaction' },
+            // Individual bill provider routes
+            'dstv_account': { feature: 'billPayment', method: 'dstv_account' },
+            'dstv_amount': { feature: 'billPayment', method: 'dstv_amount' },
+            'dstv_account_selection': { feature: 'billPayment', method: 'dstv_account_selection' },
+            'dstv_confirm': { feature: 'billPayment', method: 'dstv_confirm' },
+
+            'gotv_account': { feature: 'billPayment', method: 'gotv_account' },
+            'gotv_amount': { feature: 'billPayment', method: 'gotv_amount' },
+            'gotv_account_selection': { feature: 'billPayment', method: 'gotv_account_selection' },
+            'gotv_confirm': { feature: 'billPayment', method: 'gotv_confirm' },
+
+            'zukusatellite': { feature: 'billPayment', method: 'zukusatellite' },
+            'zukutrippleplay': { feature: 'billPayment', method: 'zukutrippleplay' },
+            'zukusatellite_account': { feature: 'billPayment', method: 'zukusatellite_account' },
+            'zukutrippleplay_account': { feature: 'billPayment', method: 'zukutrippleplay_account' },
+            'zukusatellite_amount': { feature: 'billPayment', method: 'zukusatellite_amount' },
+            'zukutrippleplay_amount': { feature: 'billPayment', method: 'zukutrippleplay_amount' },
+            'zukusatellite_account_selection': { feature: 'billPayment', method: 'zukusatellite_account_selection' },
+            'zukutrippleplay_account_selection': { feature: 'billPayment', method: 'zukutrippleplay_account_selection' },
+            'zukusatellite_confirm': { feature: 'billPayment', method: 'zukusatellite_confirm' },
+            'zukutrippleplay_confirm': { feature: 'billPayment', method: 'zukutrippleplay_confirm' },
+
+            'startimes_account': { feature: 'billPayment', method: 'startimes_account' },
+            'startimes_amount': { feature: 'billPayment', method: 'startimes_amount' },
+            'startimes_account_selection': { feature: 'billPayment', method: 'startimes_account_selection' },
+            'startimes_confirm': { feature: 'billPayment', method: 'startimes_confirm' },
+
+            'nairobiwater_account': { feature: 'billPayment', method: 'nairobiwater_account' },
+            'nairobiwater_amount': { feature: 'billPayment', method: 'nairobiwater_amount' },
+            'nairobiwater_account_selection': { feature: 'billPayment', method: 'nairobiwater_account_selection' },
+            'nairobiwater_confirm': { feature: 'billPayment', method: 'nairobiwater_confirm' },
+
+            'jtl_account': { feature: 'billPayment', method: 'jtl_account' },
+            'jtl_amount': { feature: 'billPayment', method: 'jtl_amount' },
+            'jtl_account_selection': { feature: 'billPayment', method: 'jtl_account_selection' },
+            'jtl_confirm': { feature: 'billPayment', method: 'jtl_confirm' },
+
+
+
+            // Term Deposits
+            // 'termdeposits': { feature: 'termDeposits', method: 'termdeposits' },
+            // 'termdepositstenure': { feature: 'termDeposits', method: 'termdepositstenure' },
+            // 'termdepositsamount': { feature: 'termDeposits', method: 'termdepositsamount' },
+            // 'termdepositsbankaccount': { feature: 'termDeposits', method: 'termdepositsbankaccount' },
+            // 'termdepositstransaction': { feature: 'termDeposits', method: 'termdepositstransaction' },
 
             // PIN Management
             'changepin': { feature: 'pinManagement', method: 'changepin' },
@@ -178,7 +210,6 @@ class USSDController {
             return this.sendResponse(res, 'end', 'System error. Invalid menu state.');
         }
 
-        // ADD THIS DEBUG LOGGING
         logger.info(`[ROUTING DEBUG] Routing from menu: ${menu} to ${route.feature}.${route.method}`);
         logger.info(`[ROUTING DEBUG] Response: "${response}"`);
         logger.info(`[ROUTING DEBUG] Session: ${session}`);

@@ -37,7 +37,7 @@ class MobileMoneyService extends baseFeature {
         return this.displayMenu('mobilemoney', res, 'Invalid selection. Please try again.\n\n');
     }
 
-    // ========== ACCOUNT TO M-PESA (WITHDRAW) ==========
+    // account to m-pesa 
     async withdraw(customer, msisdn, session, shortcode, response, res) {
         const sessionData = await this.ussdService.getSession(session);
 
@@ -61,7 +61,6 @@ class MobileMoneyService extends baseFeature {
         };
 
         if (menuHandlers[response]) {
-            // Store withdrawal type for navigation
             if (response === '1') {
                 sessionData.withdraw_type = 'own';
                 sessionData.withdraw_msisdn = msisdn;
@@ -79,7 +78,6 @@ class MobileMoneyService extends baseFeature {
     }
 
     async withdrawOwnNumber(customer, msisdn, session, shortcode, response, res) {
-        // Skip mobile number entry for own number, go directly to amount
         return await this.withdrawAmount(customer, msisdn, session, shortcode, null, res);
     }
 
@@ -92,7 +90,6 @@ class MobileMoneyService extends baseFeature {
         }
 
         if (response === '0') {
-            // REPLACE handleBack with direct call
             return await this.withdraw(customer, msisdn, session, shortcode, null, res);
         }
 
@@ -104,7 +101,6 @@ class MobileMoneyService extends baseFeature {
             return this.sendResponse(res, 'con', 'Invalid mobile number. Please enter a valid M-PESA number (07_ or 01_):\n\n0. Back\n00. Exit');
         }
 
-        // Store the mobile number
         sessionData.withdraw_msisdn = this.formatMobileNumber(response);
         await this.ussdService.saveSession(session, sessionData);
 
@@ -143,7 +139,6 @@ class MobileMoneyService extends baseFeature {
         }
 
         if (response === '0') {
-            // REPLACE handleBack with direct call
             return await this.withdraw(customer, msisdn, session, shortcode, null, res);
         }
 
@@ -177,7 +172,6 @@ class MobileMoneyService extends baseFeature {
         }
 
         if (response === '0') {
-            // REPLACE handleBack with direct calls
             if (sessionData.withdraw_type === 'other') {
                 return await this.withdrawOtherNumber(customer, msisdn, session, shortcode, null, res);
             } else if (sessionData.withdraw_type === 'beneficiary') {
@@ -205,7 +199,7 @@ class MobileMoneyService extends baseFeature {
         const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            await this.updateSessionMenu(session, 'withdrawbankaccount', 'withdrawamount'); // Make sure this matches
+            await this.updateSessionMenu(session, 'withdrawbankaccount', 'withdrawamount'); 
 
             const accounts = customer.accounts || [];
             if (accounts.length === 0) {
@@ -222,7 +216,6 @@ class MobileMoneyService extends baseFeature {
         }
 
         if (response === '0') {
-            // FIX: Use the correct method name - withdrawAmount (camelCase)
             return await this.withdrawAmount(customer, msisdn, session, shortcode, null, res);
         }
 
@@ -253,7 +246,6 @@ class MobileMoneyService extends baseFeature {
             const bankAccount = sessionData.withdraw_bank_account;
             const mobileNumber = this.formatDisplayMobile(sessionData.withdraw_msisdn);
 
-            // Get transaction charges
             const charges = await this.getTransactionCharges(customer, msisdn, session, shortcode, '006001001', amount);
 
             const message = `Enter PIN to send Ksh ${amount} to M-PESA ${mobileNumber} from account ${bankAccount}\n${charges}\n\n0. Back\n00. Exit`;
@@ -261,7 +253,6 @@ class MobileMoneyService extends baseFeature {
         }
 
         if (response === '0') {
-            // Use direct method call for back navigation
             return await this.withdrawBankAccount(customer, msisdn, session, shortcode, null, res);
         }
 
@@ -278,7 +269,6 @@ class MobileMoneyService extends baseFeature {
             const result = await this.processWithdrawTransaction(customer, msisdn, session, shortcode, sessionData, response);
 
             if (result.STATUS === '000' || result.STATUS === 'OK') {
-                // Clear session data
                 this.clearWithdrawSession(session);
 
                 const successMessage = result.DATA || 'Transaction completed successfully';
@@ -293,7 +283,7 @@ class MobileMoneyService extends baseFeature {
         }
     }
 
-    // ========== M-PESA TO ACCOUNT (DEPOSIT) ==========
+    // Mpesa to account
     async deposit(customer, msisdn, session, shortcode, response, res) {
         const sessionData = await this.ussdService.getSession(session);
 
@@ -377,7 +367,6 @@ class MobileMoneyService extends baseFeature {
         }
 
         if (response === '0') {
-            // Use direct method call for back navigation
             return await this.depositBankAccount(customer, msisdn, session, shortcode, null, res);
         }
 
@@ -386,7 +375,6 @@ class MobileMoneyService extends baseFeature {
         }
 
         if (response === '2') {
-            // Handle Cancel - go back to deposit amount
             return await this.deposit(customer, msisdn, session, shortcode, null, res);
         }
 
@@ -397,9 +385,7 @@ class MobileMoneyService extends baseFeature {
         try {
             const result = await this.processDepositTransaction(customer, msisdn, session, shortcode, sessionData);
 
-            // FIX: Handle the success response properly
             if (result.STATUS === '000' || result.STATUS === 'OK') {
-                // Clear session data
                 this.clearDepositSession(session);
 
                 const successMessage = 'You will receive an M-PESA prompt shortly to complete your deposit. Please check your phone.';
@@ -425,12 +411,12 @@ class MobileMoneyService extends baseFeature {
         if (!response) {
             await this.updateSessionMenu(session, 'buyfloat', 'mobilemoney');
             const featureManager = require('./index');
-            return await featureManager.execute('buyfloat', 'buyfloat', customer, msisdn, session, shortcode, null, res); // CHANGED: 'buyFloat' → 'buyfloat'
+            return await featureManager.execute('buyfloat', 'buyfloat', customer, msisdn, session, shortcode, null, res); 
         }
 
         // If there's a response, pass it directly to buyfloat feature
         const featureManager = require('./index');
-        return await featureManager.execute('buyfloat', 'buyfloat', customer, msisdn, session, shortcode, response, res); // CHANGED: 'buyFloat' → 'buyfloat'
+        return await featureManager.execute('buyfloat', 'buyfloat', customer, msisdn, session, shortcode, response, res); 
     }
 
     async buygoods(customer, msisdn, session, shortcode, response, res) {
@@ -443,7 +429,6 @@ class MobileMoneyService extends baseFeature {
         return await featureManager.execute('paybill', 'paybill', customer, msisdn, session, shortcode, response, res);
     }
 
-    // ========== HELPER METHODS ==========
     async getMpesaBeneficiaries(customer, msisdn, session, shortcode) {
         const formid = 'O-GetUtilityAlias';
         const data = `FORMID:${formid}:SERVICETYPE:MMONEY:SERVICEID:MPESA:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}`;
@@ -540,7 +525,6 @@ class MobileMoneyService extends baseFeature {
         const amount = sessionData.deposit_amount;
         const bankaccountid = sessionData.deposit_bank_account;
 
-        // Remove the duplicate FORMID:M-: from the beginning
         const data = `MERCHANTID:${merchantid}:BANKACCOUNTID:${bankaccountid}:ACCOUNTID:${bankaccountid}:AMOUNT:${amount}:CUSTOMERID:${customerid}:MOBILENUMBER:${msisdn}:INFOFIELD9:${msisdn}:ACTION:DEPOSIT`;
 
         this.logger.info(`[MOBILEMONEY] Processing deposit transaction: ${JSON.stringify(sessionData)}`);

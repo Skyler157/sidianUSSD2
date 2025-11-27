@@ -1,6 +1,7 @@
 const redisService = require('../config/redis').client;
 const apiService = require('./apiService');
 const logger = require('./logger');
+const { v4: uuidv4 } = require('uuid');
 
 class USSDService {
     constructor() {
@@ -8,9 +9,23 @@ class USSDService {
         this.menus = require('../config/menus.json');
     }
 
-    // -------------------------
+    // Use uuid package for unique IDs
+    generateUniqueId() {
+        return uuidv4();
+    }
+    validatePIN(pin) {
+        if (!pin || typeof pin !== 'string') return false;
+
+        // PIN must be exactly 4 digits
+        if (pin.length !== 4) return false;
+
+        // PIN must contain only digits
+        if (!/^\d+$/.test(pin)) return false;
+
+        return true;
+    }
+
     // SESSION FUNCTIONS
-    // -------------------------
     async saveSession(sessionId, data) {
         if (!sessionId || !data) return;
         try {
@@ -85,6 +100,7 @@ class USSDService {
             logger.error('Failed to log session time:', err);
         }
     }
+
     async handleCustomerLookup(msisdn, session, shortcode) {
         logger.info(
             `[USSD] handleCustomerLookup() called | msisdn=${msisdn} | session=${session} | shortcode=${shortcode}`
@@ -148,7 +164,6 @@ class USSDService {
             if (response.STATUS === "000") {
                 let accounts = [];
                 if (response.ACCOUNTS) {
-                    // Split by comma first, then clean up each account
                     const accountParts = response.ACCOUNTS.split(',');
                     accounts = accountParts.map(account => {
                         return account.split('-')[0].trim();
@@ -248,7 +263,7 @@ class USSDService {
                 `CUSTOMERID:${customer.customerid}`;
 
             const response = await apiService.makeRequest(
-                "FULLSTATEMENT", // You might need to adjust this API endpoint name
+                "FULLSTATEMENT",
                 data,
                 msisdn,
                 session,
@@ -326,9 +341,7 @@ class USSDService {
         }
     }
 
-    /**
- * Handle airtime purchase transactions
- */
+    // Handle airtime purchase transactions
     async handleAirtimePurchase(customer, merchantId, mobileNumber, amount, sourceAccount, pin, msisdn, session, shortcode) {
         logger.info(`[USSD] handleAirtimePurchase() | merchant=${merchantId} | mobile=${mobileNumber} | amount=${amount} | account=${sourceAccount}`);
 
@@ -442,7 +455,6 @@ class USSDService {
                         const mobileNumber = parts[1].trim();
                         const alias = parts[2].trim();
 
-                        // Only add if all fields are present and not empty
                         if (merchantId && mobileNumber && alias) {
                             beneficiaries.push([merchantId, mobileNumber, alias]);
                         }
@@ -468,7 +480,6 @@ class USSDService {
 
         try {
             const parts = apiResponse.DATA.split('|');
-            // The charge is in the second part: "ChargeAmount|5.00"
             return parts.length >= 2 ? parts[1] : '0';
         } catch (error) {
             logger.error(`[USSD] Error parsing airtime charges: ${error.message}`);
@@ -480,31 +491,78 @@ class USSDService {
         logger.info(`[USSD] handleInternalTransfer() | from=${sourceAccount} | to=${destinationAccount} | amount=${amount}`);
 
         try {
-            const data =
-                `FORMID:B-:` +
-                `MERCHANTID:TRANSFER:` +
-                `BANKACCOUNTID:${sourceAccount}:` +
-                `TOACCOUNT:${destinationAccount}:` +
-                `AMOUNT:${amount}:` +
-                `MESSAGE:${remark}:` +
-                `CUSTOMERID:${customer.customerid}:` +
-                `MOBILENUMBER:${msisdn}:` +
-                `TMPIN:${pin}`;
+            const customerid = customer.customerid;
+            const uniqueId = this.generateUniqueId();
+            const deviceId = `${msisdn}${shortcode}`;
 
-            const response = await apiService.makeRequest(
-                "TRANSFER",
-                data,
-                msisdn,
-                session,
-                shortcode
-            );
+            const data = `FORMID:B-:MERCHANTID:TRANSFER:BANKACCOUNTID:${sourceAccount}:TOACCOUNT:${destinationAccount}:AMOUNT:${amount}:MESSAGE:${remark}:CUSTOMERID:${customerid}:MOBILENUMBER:${msisdn}:TMPIN:${pin}:SESSION:${session}:BANKID:66:BANKNAME:SIDIAN:SHORTCODE:${shortcode}:COUNTRY:KENYATEST:TRXSOURCE:USSD:DEVICEID:${deviceId}:UNIQUEID:${uniqueId}`;
 
-            logger.info(`[USSD] INTERNAL TRANSFER Response: ${JSON.stringify(response)}`);
-            return response;
+            logger.info(`[USSD] CORRECT Internal Transfer Data: ${data}`);
+
+            const response = await this.makeDirectTransferRequest(data);
+
+            logger.info(`[USSD] INTERNAL TRANSFER Raw Response: ${JSON.stringify(response)}`);
+
+            // Response parsing
+            let status = '999';
+            let message = 'Transfer failed. Please try again later.';
+
+            if (response) {
+                if (response.STATUS === '000' || response.STATUS === 'OK' || response.DATA === '-)' || response.rawResponse === '-)') {
+                    status = '000';
+                    message = response.DATA || `Transfer of Ksh ${amount} to ${destinationAccount} was successful.`;
+                } else if (response.DATA) {
+                    message = response.DATA;
+                    status = response.STATUS || '999';
+                }
+            }
+
+            const finalResponse = { STATUS: status, DATA: message };
+            logger.info(`[USSD] INTERNAL TRANSFER Processed Response: ${JSON.stringify(finalResponse)}`);
+            return finalResponse;
 
         } catch (error) {
             logger.error(`[USSD] Error in handleInternalTransfer: ${error.message}`);
             return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    /**
+     * Make direct transfer request without parameter duplication
+     */
+    async makeDirectTransferRequest(data) {
+        try {
+            const axios = require('axios');
+
+            const baseUrl = 'http://172.17.40.39:23000/MobileMallUSSD_Q1/MobileMall.asmx/U';
+            const requestUrl = `${baseUrl}?b=${data}`;
+
+            logger.info(`[USSD] CORRECT Internal Transfer Request URL: ${requestUrl}`);
+
+            const response = await axios.get(requestUrl, {
+                timeout: 30000
+            });
+
+            let responseData = response.data;
+            logger.info(`[USSD] Internal Transfer API Raw Response: ${responseData}`);
+
+            const cleanResponse = this.cleanXMLResponse(responseData);
+
+            if (cleanResponse === '-)') {
+                return {
+                    STATUS: '000',
+                    DATA: 'Transaction successful',
+                    rawResponse: cleanResponse
+                };
+            }
+
+            const parsedResponse = this.parseKeyValueResponse(cleanResponse);
+            parsedResponse.rawResponse = cleanResponse;
+            return parsedResponse;
+
+        } catch (error) {
+            logger.error(`[USSD] Direct transfer request error: ${error.message}`);
+            throw error;
         }
     }
 
@@ -515,33 +573,77 @@ class USSDService {
         logger.info(`[USSD] handleCardTransfer() | cardType=${cardType} | cardNumber=${cardNumber} | amount=${amount} | account=${sourceAccount}`);
 
         try {
-            const data =
-                `FORMID:B-:` +
-                `MERCHANTID:PAYCARD:` +
-                `BANKACCOUNTID:${sourceAccount}:` +
-                `ACCOUNTID:${sourceAccount}:` +
-                `AMOUNT:${amount}:` +
-                `INFOFIELD1:${cardNumber}:` +
-                `INFOFIELD2:${cardType}:` +
-                `MESSAGE:${remark}:` +
-                `CUSTOMERID:${customer.customerid}:` +
-                `MOBILENUMBER:${msisdn}:` +
-                `TMPIN:${pin}`;
+            const customerid = customer.customerid;
+            const uniqueId = this.generateUniqueId();
+            const deviceId = `${msisdn}${shortcode}`;
 
-            const response = await apiService.makeRequest(
-                "PAYCARD",
-                data,
-                msisdn,
-                session,
-                shortcode
-            );
+            const data = `FORMID:B-:MERCHANTID:PAYCARD:BANKACCOUNTID:${sourceAccount}:ACCOUNTID:${sourceAccount}:AMOUNT:${amount}:INFOFIELD1:${cardNumber}:INFOFIELD2:${cardType}:MESSAGE:${remark}:CUSTOMERID:${customerid}:MOBILENUMBER:${msisdn}:TMPIN:${pin}:SESSION:${session}:BANKID:66:BANKNAME:SIDIAN:SHORTCODE:${shortcode}:COUNTRY:KENYATEST:TRXSOURCE:USSD:DEVICEID:${deviceId}:UNIQUEID:${uniqueId}`;
 
-            logger.info(`[USSD] CARD TRANSFER Response: ${JSON.stringify(response)}`);
-            return response;
+            logger.info(`[USSD] CORRECT Card Transfer Data: ${data}`);
+
+            const response = await this.makeDirectCardRequest(data);
+
+            logger.info(`[USSD] CARD TRANSFER Raw Response: ${JSON.stringify(response)}`);
+
+            let status = '999';
+            let message = 'Card transfer failed. Please try again later.';
+
+            if (response) {
+                if (response.STATUS === '000' || response.STATUS === 'OK' || response.DATA === '-)' || response.rawResponse === '-)') {
+                    status = '000';
+                    message = `Card transfer of Ksh ${amount} was successful.`;
+                } else if (response.DATA) {
+                    message = response.DATA;
+                    status = response.STATUS || '999';
+                }
+            }
+
+            const finalResponse = { STATUS: status, DATA: message };
+            logger.info(`[USSD] CARD TRANSFER Processed Response: ${JSON.stringify(finalResponse)}`);
+            return finalResponse;
 
         } catch (error) {
-            logger.error(`[USSD] Error in handleCardTransfer: ${error.message}`);
+            logger.error(`[USSD] Card transfer error: ${error.message}`);
             return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    /**
+     * Make direct card request without parameter duplication
+     */
+    async makeDirectCardRequest(data) {
+        try {
+            const axios = require('axios');
+
+            const baseUrl = 'http://172.17.40.39:23000/MobileMallUSSD_Q1/MobileMall.asmx/U';
+            const requestUrl = `${baseUrl}?b=${data}`;
+
+            logger.info(`[USSD] CORRECT Request URL: ${requestUrl}`);
+
+            const response = await axios.get(requestUrl, {
+                timeout: 30000
+            });
+
+            let responseData = response.data;
+            logger.info(`[USSD] API Raw Response: ${responseData}`);
+
+            const cleanResponse = this.cleanXMLResponse(responseData);
+
+            if (cleanResponse === '-)') {
+                return {
+                    STATUS: '000',
+                    DATA: 'Transaction successful',
+                    rawResponse: cleanResponse
+                };
+            }
+
+            const parsedResponse = this.parseKeyValueResponse(cleanResponse);
+            parsedResponse.rawResponse = cleanResponse;
+            return parsedResponse;
+
+        } catch (error) {
+            logger.error(`[USSD] Direct request error: ${error.message}`);
+            throw error;
         }
     }
 
@@ -635,94 +737,6 @@ class USSDService {
         }
     }
 
-    /**
-     * Manage internal transfer beneficiaries
-     */
-    async getInternalTransferBeneficiaries(customer, msisdn, session, shortcode) {
-        logger.info(`[USSD] getInternalTransferBeneficiaries() | customerid=${customer.customerid}`);
-
-        try {
-            const data =
-                `FORMID:O-GETTRANSFERBENEFICIARY:` +
-                `BENFTYPE:INTERNAL:` +
-                `CUSTOMERID:${customer.customerid}:` +
-                `MOBILENUMBER:${msisdn}`;
-
-            const response = await apiService.makeRequest(
-                "O-GETTRANSFERBENEFICIARY",
-                data,
-                msisdn,
-                session,
-                shortcode
-            );
-
-            logger.info(`[USSD] GET BENEFICIARIES Response: ${JSON.stringify(response)}`);
-            return response;
-
-        } catch (error) {
-            logger.error(`[USSD] Error in getInternalTransferBeneficiaries: ${error.message}`);
-            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
-        }
-    }
-
-    async addInternalTransferBeneficiary(customer, accountNumber, alias, msisdn, session, shortcode) {
-        logger.info(`[USSD] addInternalTransferBeneficiary() | account=${accountNumber} | alias=${alias}`);
-
-        try {
-            const data =
-                `FORMID:O-ADDTRANSFERBENEFICIARY:` +
-                `MERCHANTID:TRANSFER:` +
-                `BENFTYPE:INTERNAL:` +
-                `BENFACCOUNTID:${accountNumber}:` +
-                `BENFALIAS:${alias}:` +
-                `CUSTOMERID:${customer.customerid}:` +
-                `MOBILENUMBER:${msisdn}`;
-
-            const response = await apiService.makeRequest(
-                "O-ADDTRANSFERBENEFICIARY",
-                data,
-                msisdn,
-                session,
-                shortcode
-            );
-
-            logger.info(`[USSD] ADD BENEFICIARY Response: ${JSON.stringify(response)}`);
-            return response;
-
-        } catch (error) {
-            logger.error(`[USSD] Error in addInternalTransferBeneficiary: ${error.message}`);
-            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
-        }
-    }
-
-    async deleteInternalTransferBeneficiary(customer, accountNumber, alias, msisdn, session, shortcode) {
-        logger.info(`[USSD] deleteInternalTransferBeneficiary() | account=${accountNumber} | alias=${alias}`);
-
-        try {
-            const data =
-                `FORMID:O-DeleteTransferBeneficiary:` +
-                `BENFTYPE:INTERNAL:` +
-                `BENFACCOUNTID:${accountNumber}:` +
-                `BENFALIAS:${alias}:` +
-                `CUSTOMERID:${customer.customerid}:` +
-                `MOBILENUMBER:${msisdn}`;
-
-            const response = await apiService.makeRequest(
-                "O-DeleteTransferBeneficiary",
-                data,
-                msisdn,
-                session,
-                shortcode
-            );
-
-            logger.info(`[USSD] DELETE BENEFICIARY Response: ${JSON.stringify(response)}`);
-            return response;
-
-        } catch (error) {
-            logger.error(`[USSD] Error in deleteInternalTransferBeneficiary: ${error.message}`);
-            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
-        }
-    }
 
     async handleTermDeposit(customer, depositType, tenure, amount, accountNumber, msisdn, session, shortcode) {
         logger.info(`[USSD] handleTermDeposit() | type=${depositType} | tenure=${tenure} | amount=${amount} | account=${accountNumber}`);
@@ -780,10 +794,112 @@ class USSDService {
 
     async updateSessionMenu(sessionId, key, value) {
         const sessionData = await this.getSession(sessionId);
-        if (!sessionData) return null; // prevent "cannot set property of null"
+        if (!sessionData) return null;
         sessionData[key] = value;
         await this.saveSession(sessionId, sessionData);
         return sessionData;
+    }
+
+    cleanXMLResponse(xmlString) {
+        try {
+            // Remove XML tags and get content
+            const clean = xmlString.replace(/<\/?[^>]+(>|$)/g, "").trim();
+            return clean;
+        } catch (error) {
+            logger.error(`[USSD] XML cleaning error: ${error.message}`);
+            return xmlString;
+        }
+    }
+
+    parseKeyValueResponse(responseString) {
+        try {
+            const result = {};
+            const pairs = responseString.split(':');
+
+            for (let i = 0; i < pairs.length - 1; i += 2) {
+                const key = pairs[i].trim();
+                const value = pairs[i + 1].trim();
+                if (key && value) {
+                    result[key] = value;
+                }
+            }
+
+            return result;
+        } catch (error) {
+            logger.error(`[USSD] Key-value parsing error: ${error.message}`);
+            return { STATUS: '999', DATA: responseString };
+        }
+    }
+
+    async handleBillPayment(customer, merchantId, accountNumber, amount, sourceAccount, billCode, pin, msisdn, session, shortcode) {
+        logger.info(`[USSD] handleBillPayment() | merchant=${merchantId} | account=${accountNumber} | amount=${amount} | billCode=${billCode}`);
+
+        try {
+            const data = `FORMID:M-:MERCHANTID:${merchantId}:BANKACCOUNTID:${sourceAccount}:ACCOUNTID:${accountNumber}:AMOUNT:${amount}:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}:INFOFIELD2:${billCode}:INFOFIELD9:${msisdn}:ACTION:PAYBILL:TMPIN:${pin}`;
+
+            const response = await this.makeRequest(
+                merchantId,
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] BILL PAYMENT Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in handleBillPayment: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    // Validate bill account
+    async validateBillAccount(customer, merchantId, accountNumber, billCode, msisdn, session, shortcode) {
+        logger.info(`[USSD] validateBillAccount() | merchant=${merchantId} | account=${accountNumber} | billCode=${billCode}`);
+
+        try {
+            const data = `FORMID:M-:MERCHANTID:${merchantId}:ACCOUNTID:${accountNumber}:INFOFIELD1:${billCode}:ACTION:GETNAME:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}`;
+
+            const response = await this.makeRequest(
+                merchantId,
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] BILL VALIDATION Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in validateBillAccount: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    // Get bill payment charges
+    async getBillCharges(customer, merchantId, amount, msisdn, session, shortcode) {
+        logger.info(`[USSD] getBillCharges() | merchant=${merchantId} | amount=${amount}`);
+
+        try {
+            const data = `FORMID:O-GetBankMerchantCharges:MERCHANTID:${merchantId}:AMOUNT:${amount}:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}`;
+
+            const response = await this.makeRequest(
+                "O-GetBankMerchantCharges",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] BILL CHARGES Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in getBillCharges: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
     }
 }
 

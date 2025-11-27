@@ -12,9 +12,9 @@ class FundsTransferFeature extends baseFeature {
         }
 
         const menuHandlers = {
-            '1': () => this.internaltransfer(customer, msisdn, session, shortcode, null, res), // FIX: pass null as response
-            '2': () => this.cardtransfer(customer, msisdn, session, shortcode, null, res),    // FIX: pass null as response  
-            '3': () => this.banktransfer(customer, msisdn, session, shortcode, null, res)     // FIX: pass null as response
+            '1': () => this.internaltransfer(customer, msisdn, session, shortcode, null, res), 
+            '2': () => this.cardtransfer(customer, msisdn, session, shortcode, null, res),     
+            '3': () => this.banktransfer(customer, msisdn, session, shortcode, null, res)     
         };
 
         return await this.handleMenuFlow('fundstransfer', response, menuHandlers,

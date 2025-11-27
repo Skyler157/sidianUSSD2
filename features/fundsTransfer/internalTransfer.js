@@ -15,8 +15,6 @@ class InternalTransferFeature extends baseFeature {
             const options = [
                 { key: '1', name: 'To Own Account', method: 'internaltransferbankaccount', id: 'own', enabled: hasMultipleAccounts },
                 { key: '2', name: 'To Other Account', method: 'internaltransferotheraccount', id: 'other', enabled: true },
-                { key: '3', name: 'To a Saved Beneficiary', method: 'internaltransferbeneficiary', id: 'beneficiary', enabled: true },
-                { key: '4', name: 'Manage Internal Transfer Beneficiaries', method: 'manageinternaltransferbeneficiary', id: 'managebeneficiary', enabled: true }
             ];
 
             let message = "Internal Transfer\n\n";
@@ -48,9 +46,7 @@ class InternalTransferFeature extends baseFeature {
 
         const options = {
             '1': { method: 'internaltransferbankaccount', id: 'own', enabled: hasMultipleAccounts },
-            '2': { method: 'internaltransferotheraccount', id: 'other', enabled: true },
-            '3': { method: 'internaltransferbeneficiary', id: 'beneficiary', enabled: true },
-            '4': { method: 'manageinternaltransferbeneficiary', id: 'managebeneficiary', enabled: true }
+            '2': { method: 'internaltransferotheraccount', id: 'other', enabled: true }
         };
 
         const selected = options[response];
@@ -58,12 +54,10 @@ class InternalTransferFeature extends baseFeature {
             return this.displayMenu('internaltransfer', res, 'Invalid selection.\n\n');
         }
 
-        // Check if option is enabled
         if (!selected.enabled) {
             return this.sendResponse(res, 'con', 'This option is not available when you have only one account.\n\n0. Back\n00. Exit');
         }
 
-        // Store transfer type in session
         const sessionData = await this.ussdService.getSession(session);
         sessionData.transferType = selected.id;
         await this.ussdService.saveSession(session, sessionData);
@@ -111,7 +105,6 @@ class InternalTransferFeature extends baseFeature {
 
         await this.ussdService.saveSession(session, sessionData);
 
-        // FIXED: Based on PHP logic - different flows for different transfer types
         if (sessionData.transferType === 'own') {
             return await this.internaltransferamount(customer, msisdn, session, shortcode, null, res);
         } else {
@@ -152,7 +145,6 @@ class InternalTransferFeature extends baseFeature {
 
         this.logger.info(`[INTERNALTRANSFER] Amount set to: ${response}, proceeding to next step`);
 
-        // FIXED: Based on PHP logic - different flows for different transfer types
         if (sessionData.transferType === 'own') {
             return await this.internaltransferownaccount(customer, msisdn, session, shortcode, null, res);
         } else {
@@ -168,23 +160,19 @@ class InternalTransferFeature extends baseFeature {
         if (!response) {
             await this.updateSessionMenu(session, 'internaltransferownaccount', 'internaltransferamount');
 
-            // Get all accounts and exclude the source account
             const accounts = sessionData.customer.accounts || [];
             const sourceAccountIndex = sessionData.ownTransferSourceKey;
 
-            // FIX: Check if sourceAccountIndex is defined
             if (sourceAccountIndex === undefined) {
                 this.logger.error(`[INTERNALTRANSFER] ownTransferSourceKey is undefined, going back to amount`);
                 return await this.handleBack(sessionData, 'fundsTransfer', 'internaltransferamount',
                     msisdn, session, shortcode, res);
             }
 
-            // Filter out the source account
             const destinationAccounts = accounts.filter((account, index) => index !== sourceAccountIndex);
 
             this.logger.info(`[INTERNALTRANSFER] Filtering accounts - source index: ${sourceAccountIndex}, total accounts: ${accounts.length}, destination accounts: ${destinationAccounts.length}`);
 
-            // Handle case where user has only one account
             if (destinationAccounts.length === 0) {
                 const errorMessage = "You only have one account. Cannot transfer to own account when you have only one account.\n\n0. Back\n00. Exit";
                 return this.sendResponse(res, 'con', errorMessage);
@@ -202,8 +190,6 @@ class InternalTransferFeature extends baseFeature {
             this.logger.info(`[INTERNALTRANSFER] Showing ${destinationAccounts.length} destination accounts`);
             return this.sendResponse(res, 'con', accountList);
         }
-
-        // ... rest of the method
     }
 
     async internaltransferremark(customer, msisdn, session, shortcode, response, res) {
@@ -243,7 +229,6 @@ class InternalTransferFeature extends baseFeature {
             const destinationAccount = sessionData.destinationAccount || sessionData.transferAccount;
             const remark = sessionData.transferRemark;
 
-            // Validate session data exists
             if (!amount || !sourceAccount || !destinationAccount) {
                 this.logger.error(`[INTERNALTRANSFER] Missing session data for transaction: amount=${amount}, source=${sourceAccount}, dest=${destinationAccount}`);
                 return this.sendResponse(res, 'end', 'Session expired. Please start over.');
@@ -253,7 +238,6 @@ class InternalTransferFeature extends baseFeature {
             return this.sendResponse(res, 'con', message);
         }
 
-        // Handle back navigation
         if (response === '0') {
             return await this.handleBack(sessionData, 'fundsTransfer', 'internaltransferremark',
                 msisdn, session, shortcode, res);
@@ -262,8 +246,6 @@ class InternalTransferFeature extends baseFeature {
         if (response === '00') {
             return await this.handleExit(session, res);
         }
-
-        // FIX: Add proper PIN validation
         if (!this.ussdService.validatePIN(response)) {
             return this.sendResponse(res, 'con', 'Invalid PIN format. Please enter a valid 4-digit PIN:\n\n0. Back\n00. Exit');
         }
@@ -275,19 +257,17 @@ class InternalTransferFeature extends baseFeature {
                 sessionData.destinationAccount || sessionData.transferAccount,
                 sessionData.transferAmount,
                 sessionData.transferRemark,
-                response, // PIN
+                response, 
                 msisdn, session, shortcode
             );
 
             this.logger.info(`[INTERNALTRANSFER] Transaction result: ${JSON.stringify(result)}`);
 
-            // Handle response like PHP does - only clear on SUCCESS
             if (result.STATUS === '000' || result.STATUS === 'OK') {
                 await this.clearTransferSession(session);
                 const successMessage = result.DATA || `Transfer of Ksh ${sessionData.transferAmount} was successful.`;
                 return this.sendResponse(res, 'con', `${successMessage}\n\n0. Back\n00. Exit`);
             } else {
-                // Don't clear session on failure - allow retry (PHP pattern)
                 const errorMessage = result.DATA || 'Transfer failed. Please try again.';
                 return this.sendResponse(res, 'con', `${errorMessage}\n\n0. Back\n00. Exit`);
             }
@@ -325,44 +305,6 @@ class InternalTransferFeature extends baseFeature {
         return await this.internaltransferamount(customer, msisdn, session, shortcode, null, res);
     }
 
-    async internaltransferbeneficiary(customer, msisdn, session, shortcode, response, res) {
-        // Implementation for beneficiary selection
-        return this.sendResponse(res, 'con', "Beneficiary feature coming soon\n\n0. Back\n00. Exit");
-    }
-
-    async manageinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res) {
-        // Implementation for beneficiary management
-        return this.sendResponse(res, 'con', "Beneficiary management coming soon\n\n0. Back\n00. Exit");
-    }
-
-    // Add other beneficiary methods with similar stubs
-    async addinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res) {
-        return this.sendResponse(res, 'con', "Add beneficiary coming soon\n\n0. Back\n00. Exit");
-    }
-
-    async addinternaltransferbeneficiaryname(customer, msisdn, session, shortcode, response, res) {
-        return this.sendResponse(res, 'con', "Add beneficiary name coming soon\n\n0. Back\n00. Exit");
-    }
-
-    async addinternaltransferbeneficiarytransaction(customer, msisdn, session, shortcode, response, res) {
-        return this.sendResponse(res, 'con', "Add beneficiary transaction coming soon\n\n0. Back\n00. Exit");
-    }
-
-    async viewinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res) {
-        return this.sendResponse(res, 'con', "View beneficiaries coming soon\n\n0. Back\n00. Exit");
-    }
-
-    async viewinternaltransferbeneficiarytransaction(customer, msisdn, session, shortcode, response, res) {
-        return this.sendResponse(res, 'con', "View beneficiary transaction coming soon\n\n0. Back\n00. Exit");
-    }
-
-    async deleteinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res) {
-        return this.sendResponse(res, 'con', "Delete beneficiary coming soon\n\n0. Back\n00. Exit");
-    }
-
-    async deleteinternaltransferbeneficiarytransaction(customer, msisdn, session, shortcode, response, res) {
-        return this.sendResponse(res, 'con', "Delete beneficiary transaction coming soon\n\n0. Back\n00. Exit");
-    }
 
     async clearTransferSession(session) {
         try {
@@ -384,7 +326,7 @@ class InternalTransferFeature extends baseFeature {
     }
 }
 
-// Create a single instance and export bound methods
+
 const internalTransferInstance = new InternalTransferFeature();
 
 module.exports = {
@@ -394,14 +336,5 @@ module.exports = {
     internaltransferownaccount: internalTransferInstance.internaltransferownaccount.bind(internalTransferInstance),
     internaltransferremark: internalTransferInstance.internaltransferremark.bind(internalTransferInstance),
     internaltransfertransaction: internalTransferInstance.internaltransfertransaction.bind(internalTransferInstance),
-    internaltransferotheraccount: internalTransferInstance.internaltransferotheraccount.bind(internalTransferInstance),
-    internaltransferbeneficiary: internalTransferInstance.internaltransferbeneficiary.bind(internalTransferInstance),
-    manageinternaltransferbeneficiary: internalTransferInstance.manageinternaltransferbeneficiary.bind(internalTransferInstance),
-    addinternaltransferbeneficiary: internalTransferInstance.addinternaltransferbeneficiary.bind(internalTransferInstance),
-    addinternaltransferbeneficiaryname: internalTransferInstance.addinternaltransferbeneficiaryname.bind(internalTransferInstance),
-    addinternaltransferbeneficiarytransaction: internalTransferInstance.addinternaltransferbeneficiarytransaction.bind(internalTransferInstance),
-    viewinternaltransferbeneficiary: internalTransferInstance.viewinternaltransferbeneficiary.bind(internalTransferInstance),
-    viewinternaltransferbeneficiarytransaction: internalTransferInstance.viewinternaltransferbeneficiarytransaction.bind(internalTransferInstance),
-    deleteinternaltransferbeneficiary: internalTransferInstance.deleteinternaltransferbeneficiary.bind(internalTransferInstance),
-    deleteinternaltransferbeneficiarytransaction: internalTransferInstance.deleteinternaltransferbeneficiarytransaction.bind(internalTransferInstance)
+    internaltransferotheraccount: internalTransferInstance.internaltransferotheraccount.bind(internalTransferInstance)
 };

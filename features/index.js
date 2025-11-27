@@ -38,7 +38,6 @@ class FeatureManager {
         }
     }
 
-    // ... rest remains the same
     getFeature(featureName) {
         const feature = this.features.get(featureName);
         if (!feature) {

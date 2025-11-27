@@ -17,14 +17,12 @@ class CardTransferFeature extends baseFeature {
             const amount = sessionData.cardamount || '';
             const bankaccountid = sessionData.cardbankaccount || '';
 
-            // FIX: Get charges like PHP does
             const charges = await this.getTransactionCharges(customer, msisdn, session, shortcode, 'PAYCARD', amount);
 
             const message = `Enter PIN to transfer Ksh ${amount} to ${card} ${cardnumber} from account ${bankaccountid}. Remark: ${remark}\n${charges}\n\n0. Back\n00. Exit`;
             return this.sendResponse(res, 'con', message);
         }
 
-        // FIX: Check if transaction already processed like PHP
         if (sessionData.cardtransaction) {
             if (response === '00') {
                 return await this.handleExit(session, res);
@@ -42,7 +40,6 @@ class CardTransferFeature extends baseFeature {
             return await this.handleExit(session, res);
         }
 
-        // FIX: Use the enhanced PIN validation from baseFeature
         if (!this.validatePin(response)) {
             return this.sendResponse(res, 'con', 'Invalid PIN. Please enter a valid 4-digit PIN:\n\n0. Back\n00. Exit');
         }
@@ -50,20 +47,19 @@ class CardTransferFeature extends baseFeature {
         try {
             const result = await this.ussdService.handleCardTransfer(
                 customer,
-                sessionData.cardtransferid, // Use the ID (PREPAID/CREDIT)
+                sessionData.cardtransferid, 
                 sessionData.cardnumber,
                 sessionData.cardamount,
                 sessionData.cardbankaccount,
                 sessionData.cardremark,
-                response, // PIN
+                response, 
                 msisdn, session, shortcode
             );
 
-            // Mark transaction as processed like PHP
+
             sessionData.cardtransaction = true;
             await this.ussdService.saveSession(session, sessionData);
 
-            // FIX: Use proper response parsing
             if (result.STATUS === '000' || result.STATUS === 'OK') {
                 const successMessage = result.DATA || 'Card transfer completed successfully';
                 return this.sendResponse(res, 'con', `${successMessage}\n\n0. Back\n00. Exit`);
@@ -72,69 +68,65 @@ class CardTransferFeature extends baseFeature {
                 return this.sendResponse(res, 'con', `${errorMessage}\n\n0. Back\n00. Exit`);
             }
         } catch (error) {
-            // FIX: Better error handling
             this.logger.error(`[CARDTRANSFER] Transaction error: ${error.message}`);
             const name = customer.firstname || customer.lastname || 'Customer';
             return this.sendResponse(res, 'con', `Dear ${name}, sorry the service is temporarily unavailable. Please try again later\n\n0. Back\n00. Exit`);
         }
     }
-    // Add this missing method to your CardTransferFeature class in cardTransfer.js
-async cardtransfer(customer, msisdn, session, shortcode, response, res) {
-    if (!response) {
-        await this.updateSessionMenu(session, 'cardtransfer', 'fundstransfer');
-        
-        // FIX: Use exact PHP options format
+
+    async cardtransfer(customer, msisdn, session, shortcode, response, res) {
+        if (!response) {
+            await this.updateSessionMenu(session, 'cardtransfer', 'fundstransfer');
+
+            const options = [
+                ['Pre-Paid Card', 'PREPAID'],
+                ['Credit Card', 'CREDIT']
+            ];
+
+            let message = "Card Transfer\n\nSelect Card Type:\n";
+            options.forEach((option, index) => {
+                const [name, id] = option;
+                message += `${index + 1}. ${name}\n`;
+            });
+            message += "\n0. Back\n00. Exit";
+
+            return this.sendResponse(res, 'con', message);
+        }
+
+        if (response === '0') {
+            return await this.handleBack(
+                await this.ussdService.getSession(session),
+                'fundsTransfer', 'fundstransfer', msisdn, session, shortcode, res
+            );
+        }
+
+        if (response === '00') {
+            return await this.handleExit(session, res);
+        }
+
+        if (!/^\d+$/.test(response)) {
+            return this.displayMenu('cardtransfer', res, 'Invalid selection.\n\n');
+        }
+
+        const key = parseInt(response) - 1;
         const options = [
             ['Pre-Paid Card', 'PREPAID'],
             ['Credit Card', 'CREDIT']
         ];
 
-        let message = "Card Transfer\n\nSelect Card Type:\n";
-        options.forEach((option, index) => {
-            const [name, id] = option;
-            message += `${index + 1}. ${name}\n`;
-        });
-        message += "\n0. Back\n00. Exit";
+        if (key < 0 || key >= options.length) {
+            return this.displayMenu('cardtransfer', res, 'Invalid selection.\n\n');
+        }
 
-        return this.sendResponse(res, 'con', message);
+        const [name, id] = options[key];
+
+        const sessionData = await this.ussdService.getSession(session);
+        sessionData.cardtransfer = name;
+        sessionData.cardtransferid = id;
+        await this.ussdService.saveSession(session, sessionData);
+
+        return await this.cardnumber(customer, msisdn, session, shortcode, null, res);
     }
-
-    if (response === '0') {
-        return await this.handleBack(
-            await this.ussdService.getSession(session),
-            'fundsTransfer', 'fundstransfer', msisdn, session, shortcode, res
-        );
-    }
-
-    if (response === '00') {
-        return await this.handleExit(session, res);
-    }
-
-    // FIX: Use PHP validation logic
-    if (!/^\d+$/.test(response)) {
-        return this.displayMenu('cardtransfer', res, 'Invalid selection.\n\n');
-    }
-
-    const key = parseInt(response) - 1;
-    const options = [
-        ['Pre-Paid Card', 'PREPAID'],
-        ['Credit Card', 'CREDIT']
-    ];
-
-    if (key < 0 || key >= options.length) {
-        return this.displayMenu('cardtransfer', res, 'Invalid selection.\n\n');
-    }
-
-    const [name, id] = options[key];
-    
-    // Store like PHP does
-    const sessionData = await this.ussdService.getSession(session);
-    sessionData.cardtransfer = name;
-    sessionData.cardtransferid = id;
-    await this.ussdService.saveSession(session, sessionData);
-
-    return await this.cardnumber(customer, msisdn, session, shortcode, null, res);
-}
 
     async cardnumber(customer, msisdn, session, shortcode, response, res) {
         const sessionData = await this.ussdService.getSession(session);
@@ -155,7 +147,7 @@ async cardtransfer(customer, msisdn, session, shortcode, response, res) {
             return await this.handleExit(session, res);
         }
 
-        // FIX: Use PHP validation - ctype_digit equivalent
+
         if (!/^\d+$/.test(response)) {
             return this.sendResponse(res, 'con', "Invalid card number. Please enter numbers only:\n\n0. Back\n00. Exit");
         }
@@ -183,7 +175,7 @@ async cardtransfer(customer, msisdn, session, shortcode, response, res) {
             return await this.handleExit(session, res);
         }
 
-        // FIX: Use PHP validation - ctype_digit equivalent
+
         if (!/^\d+$/.test(response)) {
             return this.sendResponse(res, 'con', "Invalid amount. Please enter numbers only:\n\n0. Back\n00. Exit");
         }
@@ -271,21 +263,12 @@ async cardtransfer(customer, msisdn, session, shortcode, response, res) {
             const amount = sessionData.cardamount || '';
             const bankaccountid = sessionData.cardbankaccount || '';
 
-            // FIX: Get charges like PHP does
             const charges = await this.getTransactionCharges(customer, msisdn, session, shortcode, 'PAYCARD', amount);
 
             const message = `Enter PIN to transfer Ksh ${amount} to ${card} ${cardnumber} from account ${bankaccountid}. Remark: ${remark}\n${charges}\n\n0. Back\n00. Exit`;
             return this.sendResponse(res, 'con', message);
         }
 
-        // FIX: Check if transaction already processed like PHP
-        if (sessionData.cardtransaction) {
-            if (response === '00') {
-                return await this.handleExit(session, res);
-            } else {
-                return await this.handleBackToHome(customer, msisdn, session, shortcode, res);
-            }
-        }
 
         if (response === '0') {
             return await this.handleBack(sessionData, 'fundsTransfer', 'cardremark',
@@ -301,23 +284,25 @@ async cardtransfer(customer, msisdn, session, shortcode, response, res) {
         }
 
         try {
+            this.logger.info(`[CARDTRANSFER] Processing transaction with PIN: ${response}`);
+
             const result = await this.ussdService.handleCardTransfer(
                 customer,
-                sessionData.cardtransferid, // Use the ID (PREPAID/CREDIT)
+                sessionData.cardtransferid, 
                 sessionData.cardnumber,
                 sessionData.cardamount,
                 sessionData.cardbankaccount,
                 sessionData.cardremark,
-                response,
+                response, 
                 msisdn, session, shortcode
             );
 
-            // Mark transaction as processed like PHP
-            sessionData.cardtransaction = true;
-            await this.ussdService.saveSession(session, sessionData);
-
             if (result.STATUS === '000') {
                 const successMessage = result.DATA || 'Card transfer completed successfully';
+
+                await this.clearCardTransactionData(session);
+
+                await this.updateSessionMenu(session, 'mobilebanking', 'cardtransaction');
                 return this.sendResponse(res, 'con', `${successMessage}\n\n0. Back\n00. Exit`);
             } else {
                 const errorMessage = result.DATA || 'Card transfer failed. Please try again.';
@@ -327,6 +312,21 @@ async cardtransfer(customer, msisdn, session, shortcode, response, res) {
             this.logger.error(`[CARDTRANSFER] Transaction error: ${error.message}`);
             const name = customer.firstname || customer.lastname || 'Customer';
             return this.sendResponse(res, 'con', `Dear ${name}, sorry the service is temporarily unavailable. Please try again later\n\n0. Back\n00. Exit`);
+        }
+    }
+
+    async clearCardTransactionData(session) {
+        const sessionData = await this.ussdService.getSession(session);
+        if (sessionData) {
+            delete sessionData.cardtransfer;
+            delete sessionData.cardtransferid;
+            delete sessionData.cardnumber;
+            delete sessionData.cardamount;
+            delete sessionData.cardbankaccount;
+            delete sessionData.cardremark;
+            delete sessionData.cardtransaction;
+
+            await this.ussdService.saveSession(session, sessionData);
         }
     }
 
@@ -344,7 +344,7 @@ async cardtransfer(customer, msisdn, session, shortcode, response, res) {
     }
 }
 
-// Create instance and export methods
+
 const cardTransferInstance = new CardTransferFeature();
 
 module.exports = {

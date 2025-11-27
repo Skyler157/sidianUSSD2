@@ -141,25 +141,21 @@ class AirtimeService extends baseFeature {
     }
 
     async airtimebeneficiary(customer, msisdn, session, shortcode, response, res) {
-        // Get fresh session data
         let sessionData = await this.ussdService.getSession(session);
 
-        // ADD COMPREHENSIVE DEBUG LOGGING
-        this.logger.info(`[AIRTIME DEBUG] ===== ENTERING AIRTIMEBENEFICIARY =====`);
         this.logger.info(`[AIRTIME DEBUG] Response: "${response}"`);
         this.logger.info(`[AIRTIME DEBUG] Current menu before update: ${sessionData.current_menu}`);
         this.logger.info(`[AIRTIME DEBUG] Airtime mode: ${sessionData.airtime_mode}`);
         this.logger.info(`[AIRTIME DEBUG] Airtime network: ${sessionData.airtimenetwork}`);
 
         try {
-            // If no response, we're entering this menu for the first time
+
             if (!response) {
                 this.logger.info(`[AIRTIME DEBUG] First time entering airtimebeneficiary`);
 
-                // FIX: Update session menu BEFORE fetching beneficiaries
+
                 await this.updateSessionMenu(session, 'airtimebeneficiary', 'airtimenetwork');
 
-                // Refresh session data after update
                 sessionData = await this.ussdService.getSession(session);
                 this.logger.info(`[AIRTIME DEBUG] Menu after update: ${sessionData.current_menu}`);
 
@@ -181,7 +177,6 @@ class AirtimeService extends baseFeature {
 
                 message += '\n0. Back\n00. Exit';
 
-                // Save beneficiaries to session
                 sessionData.airtime_beneficiaries = fetchedBeneficiaries;
                 await this.ussdService.saveSession(session, sessionData);
 
@@ -189,19 +184,16 @@ class AirtimeService extends baseFeature {
                 return this.sendResponse(res, 'con', message);
             }
 
-            // Handle back navigation
             if (response === '0') {
                 this.logger.info(`[AIRTIME DEBUG] Back navigation from airtimebeneficiary`);
                 return await this.airtimenetwork(customer, msisdn, session, shortcode, null, res);
             }
 
-            // Handle exit
             if (response === '00') {
                 this.logger.info(`[AIRTIME DEBUG] Exit from airtimebeneficiary`);
                 return await this.handleExit(session, res);
             }
 
-            // Handle beneficiary selection
             this.logger.info(`[AIRTIME DEBUG] Processing beneficiary selection: ${response}`);
 
             const selectedIndex = parseInt(response) - 1;
@@ -214,11 +206,9 @@ class AirtimeService extends baseFeature {
 
                 this.logger.info(`[AIRTIME DEBUG] Selected beneficiary: ${alias} (${mobileNumber})`);
 
-                // Update session data
                 sessionData.airtimemsisdn = mobileNumber;
                 await this.ussdService.saveSession(session, sessionData);
 
-                // FIX: Update menu BEFORE calling next method
                 await this.updateSessionMenu(session, 'airtimeamount', 'airtimebeneficiary');
 
                 this.logger.info(`[AIRTIME DEBUG] Proceeding to airtimeamount with mobile: ${mobileNumber}`);
@@ -393,7 +383,6 @@ class AirtimeService extends baseFeature {
         }
     }
 
-    // ========== HELPER METHODS ==========
 
     async getAirtimeBeneficiaries(customer, msisdn, session, shortcode, merchantid) {
         try {
@@ -456,7 +445,7 @@ class AirtimeService extends baseFeature {
                 delete sessionData.airtimemsisdn;
                 delete sessionData.airtimeamount;
                 delete sessionData.airtimebankaccount;
-                delete sessionData.airtime_beneficiaries; // Use the same key
+                delete sessionData.airtime_beneficiaries; 
                 await this.ussdService.saveSession(session, sessionData);
             }
         } catch (error) {

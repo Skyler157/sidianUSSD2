@@ -30,13 +30,11 @@ class BuyGoodsService extends baseFeature {
         }
 
         try {
-            // Validate till with external API
             const validationResult = await this.validateTill(customer, msisdn, session, shortcode, response);
 
             if (validationResult.STATUS === '000' || validationResult.STATUS === 'OK') {
                 const tillName = this.cleanTillName(validationResult.DATA);
                 
-                // Store session data
                 const sessionData = await this.ussdService.getSession(session);
                 sessionData.till_number = response;
                 sessionData.till_name = tillName;
@@ -72,10 +70,8 @@ class BuyGoodsService extends baseFeature {
         }
 
         if (response === '1') {
-            // User confirmed till name
             return await this.buygoodsamount(customer, msisdn, session, shortcode, null, res);
         } else if (response === '2') {
-            // User cancelled - go back to mobile money
             return await this.handleBackToMobileMoney(customer, msisdn, session, shortcode, res);
         } else {
             return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n1. Confirm\n2. Cancel\n\n00. Exit');
@@ -211,7 +207,6 @@ class BuyGoodsService extends baseFeature {
             const result = await this.processBuyGoodsTransaction(customer, msisdn, session, shortcode, sessionData, response);
 
             if (result.STATUS === '000' || result.STATUS === 'OK') {
-                // Clear session data
                 this.clearBuyGoodsSession(session);
 
                 const successMessage = result.DATA || 'Goods purchase completed successfully';
@@ -226,7 +221,6 @@ class BuyGoodsService extends baseFeature {
         }
     }
 
-    // ========== HELPER METHODS ==========
 
     async validateTill(customer, msisdn, session, shortcode, tillNumber) {
         const customerid = customer.customerid;
@@ -258,12 +252,10 @@ class BuyGoodsService extends baseFeature {
     }
 
     validateTillNumber(tillNumber) {
-        // Till numbers are typically numeric and have specific length
         return /^\d+$/.test(tillNumber) && tillNumber.length >= 5 && tillNumber.length <= 15;
     }
 
     cleanTillName(tillName) {
-        // Clean up till name - remove extra spaces and trim
         if (!tillName) return 'Unknown Till';
         return tillName.replace(/\s+/g, ' ').trim();
     }
