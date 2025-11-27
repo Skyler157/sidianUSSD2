@@ -43,9 +43,13 @@ class baseFeature {
     }
 
     async handleBack(sessionData, targetFeature, targetMethod, msisdn, session, shortcode, res) {
+        this.logger.info(`[NAVIGATION] Handling back from ${sessionData.current_menu} to ${targetMethod} via ${targetFeature}`);
+
         // Use the back navigation mapping from this class
         const backFeature = this.getBackFeature(sessionData.current_menu);
         const backMethod = this.getBackMethod(sessionData.current_menu);
+
+        this.logger.info(`[NAVIGATION] Back mapping result: ${sessionData.current_menu} -> ${backMethod} (${backFeature})`);
 
         sessionData.current_menu = backMethod;
         await this.ussdService.saveSession(session, sessionData);
@@ -82,9 +86,23 @@ class baseFeature {
     // Common session management
     async updateSessionMenu(session, currentMenu, previousMenu) {
         const sessionData = await this.ussdService.getSession(session);
+        if (!sessionData) {
+            this.logger.error(`[SESSION] No session data found for session: ${session}`);
+            return null;
+        }
+
+        // ADD DEBUG LOGGING
+        this.logger.info(`[SESSION DEBUG] BEFORE UPDATE - Current menu: ${sessionData.current_menu}, Previous menu: ${sessionData.previous_menu}`);
+
         sessionData.current_menu = currentMenu;
         sessionData.previous_menu = previousMenu;
         await this.ussdService.saveSession(session, sessionData);
+
+        // Verify the update
+        const verifySession = await this.ussdService.getSession(session);
+        this.logger.info(`[SESSION DEBUG] AFTER UPDATE - Current menu: ${verifySession.current_menu}, Previous menu: ${verifySession.previous_menu}`);
+
+        this.logger.info(`[SESSION] Updated menu: ${previousMenu} -> ${currentMenu}`);
         return sessionData;
     }
 
@@ -153,6 +171,11 @@ class baseFeature {
         }
     }
 
+    async handleBackToHome(customer, msisdn, session, shortcode, res) {
+        const featureManager = require('./index');
+        return await featureManager.execute('navigation', 'mobilebanking', customer, msisdn, session, shortcode, null, res);
+    }
+
     // Navigation mapping
     getBackFeature(menuKey) {
         const backMap = {
@@ -212,6 +235,35 @@ class baseFeature {
             'airtimebankaccount': 'airtimeamount',
             'airtimetransaction': 'airtimebankaccount',
 
+            // Funds Transfer back navigation
+            'fundstransfer': 'navigation',
+            'internaltransfer': 'fundsTransfer',
+            'internaltransferbankaccount': 'fundsTransfer',
+            'internaltransferamount': 'fundsTransfer',
+            'internaltransferownaccount': 'fundsTransfer',
+            'internaltransferremark': 'fundsTransfer',
+            'internaltransfertransaction': 'fundsTransfer',
+            'internaltransferotheraccount': 'fundsTransfer',
+            'internaltransferbeneficiary': 'fundsTransfer',
+            'manageinternaltransferbeneficiary': 'fundsTransfer',
+            'cardtransfer': 'fundsTransfer',
+            'cardnumber': 'fundsTransfer',
+            'cardamount': 'fundsTransfer',
+            'cardbankaccount': 'fundsTransfer',
+            'cardremark': 'fundsTransfer',
+            'cardtransaction': 'fundsTransfer',
+            'banktransfer': 'fundsTransfer',
+            'bankfilter': 'fundsTransfer',
+            'banklist': 'fundsTransfer',
+            'bankbranch': 'fundsTransfer',
+            'bankbranchlist': 'fundsTransfer',
+            'banktrasferaccount': 'fundsTransfer',
+            'banktrasfername': 'fundsTransfer',
+            'banktrasfermount': 'fundsTransfer',
+            'banktrasferbankaccount': 'fundsTransfer',
+            'banktrasferremark': 'fundsTransfer',
+            'banktrasfertransaction': 'fundsTransfer',
+
             'changepin': 'navigation',
             'default': 'navigation'
         };
@@ -224,6 +276,12 @@ class baseFeature {
             'balance': 'myaccount',
             'ministatement': 'myaccount',
             'fullstatement': 'myaccount',
+            'myaccount': 'mobilebanking',
+            'balance': 'myaccount',
+            'ministatement': 'myaccount',
+            'fullstatement': 'myaccount',
+
+
             'beneficiary': 'myaccount',
             'managewithdrawbeneficiary': 'beneficiary',
             'addwithdrawbeneficiary': 'managewithdrawbeneficiary',
@@ -232,6 +290,8 @@ class baseFeature {
             'viewwithdrawbeneficiaries': 'managewithdrawbeneficiary',
             'deletewithdrawbeneficiary': 'managewithdrawbeneficiary',
             'deletebeneficiaryconfirm': 'deletewithdrawbeneficiary',
+
+            // Mobile Money back navigation
             'mobilemoney': 'mobilebanking',
             'withdraw': 'mobilemoney',
             'withdrawmsisdn': 'withdraw',
@@ -273,6 +333,35 @@ class baseFeature {
             'airtimeamount': 'airtimebeneficiary',
             'airtimebankaccount': 'airtimeamount',
             'airtimetransaction': 'airtimebankaccount',
+
+            // Funds Transfer back navigation
+            'fundstransfer': 'mobilebanking',
+            'internaltransfer': 'fundstransfer',
+            'internaltransferbankaccount': 'internaltransfer',
+            'internaltransferamount': 'internaltransferbankaccount',
+            'internaltransferownaccount': 'internaltransferamount',
+            'internaltransferremark': 'internaltransferownaccount',
+            'internaltransfertransaction': 'internaltransferremark',
+            'internaltransferotheraccount': 'internaltransfer',
+
+            'cardtransfer': 'fundstransfer',
+            'cardnumber': 'cardtransfer',
+            'cardamount': 'cardnumber',
+            'cardbankaccount': 'cardamount',
+            'cardremark': 'cardbankaccount',
+            'cardtransaction': 'cardremark',
+
+            'banktransfer': 'fundstransfer',
+            'bankfilter': 'banktransfer',
+            'banklist': 'bankfilter',
+            'bankbranch': 'banklist',
+            'bankbranchlist': 'bankbranch',
+            'banktrasferaccount': 'bankbranchlist',
+            'banktrasfername': 'banktrasferaccount',
+            'banktrasfermount': 'banktrasfername',
+            'banktrasferbankaccount': 'banktrasfermount',
+            'banktrasferremark': 'banktrasferbankaccount',
+            'banktrasfertransaction': 'banktrasferremark',
 
             'changepin': 'mobilebanking',
             'default': 'mobilebanking'

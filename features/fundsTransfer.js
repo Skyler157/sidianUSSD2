@@ -1,170 +1,190 @@
-const ussdService = require('../services/ussdService');
-const logger = require('../services/logger');
+const baseFeature = require('./baseFeature');
 
-class FundsTransferFeature {
+class FundsTransferFeature extends baseFeature {
     constructor() {
-        this.menus = require('../config/menus.json');
+        super();
     }
 
     async fundstransfer(customer, msisdn, session, shortcode, response, res) {
-        logger.info(`FundsTransfer::fundstransfer: ${JSON.stringify({ customer, msisdn, session, shortcode, response })}`);
-
-        const sessionData = await ussdService.getSession(session);
-
         if (!response) {
-            sessionData.current_menu = 'fundstransfer';
-            sessionData.previous_menu = 'mobilebanking';
-            await ussdService.saveSession(session, sessionData);
+            await this.updateSessionMenu(session, 'fundstransfer', 'mobilebanking');
             return this.displayMenu('fundstransfer', res);
         }
 
         const menuHandlers = {
-            '1': () => this.transferown(customer, msisdn, session, shortcode, null, res),
-            '2': () => this.transferother(customer, msisdn, session, shortcode, null, res),
-            '0': () => this.handleNavigation('0', sessionData, msisdn, session, shortcode, res),
-            '00': () => this.handleNavigation('00', sessionData, msisdn, session, shortcode, res)
+            '1': () => this.internaltransfer(customer, msisdn, session, shortcode, null, res), // FIX: pass null as response
+            '2': () => this.cardtransfer(customer, msisdn, session, shortcode, null, res),    // FIX: pass null as response  
+            '3': () => this.banktransfer(customer, msisdn, session, shortcode, null, res)     // FIX: pass null as response
         };
 
-        return await this.handleMenuNavigation(response, menuHandlers, sessionData, msisdn, session, shortcode, res, 'fundstransfer');
+        return await this.handleMenuFlow('fundstransfer', response, menuHandlers,
+            await this.ussdService.getSession(session), msisdn, session, shortcode, res);
     }
 
-    async transferown(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            sessionData.current_menu = 'transferown';
-            sessionData.previous_menu = 'fundstransfer';
-            await ussdService.saveSession(session, sessionData);
-            return this.displayMenu('transferown', res);
-        }
-
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-        }
-
-        const selectedIndex = parseInt(response) - 1;
-        const accounts = sessionData.customer.accounts || [];
-
-        if (accounts[selectedIndex]) {
-            const toAccount = accounts[selectedIndex];
-            sessionData.to_account = toAccount;
-            sessionData.current_menu = 'transferown_amount';
-            await ussdService.saveSession(session, sessionData);
-
-            return this.displayMenu('transferown_amount', res);
-        } else {
-            return this.sendResponse(res, 'con', 'Invalid account selection. Please try again:\n\n0. Back\n00. Home');
-        }
+    async internaltransfer(customer, msisdn, session, shortcode, response, res) {
+        const { internaltransfer } = require('./fundsTransfer/internalTransfer');
+        return await internaltransfer(customer, msisdn, session, shortcode, response, res);
     }
 
-    async transferown_amount(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            return this.displayMenu('transferown_amount', res);
-        }
-
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-        }
-
-        // Validate amount
-        const amount = parseFloat(response);
-        if (isNaN(amount) || amount <= 0) {
-            return this.sendResponse(res, 'con', 'Invalid amount. Please enter a valid amount:\n\n0. Back\n00. Home');
-        }
-
-        sessionData.amount = amount;
-        sessionData.current_menu = 'transferown_source';
-        await ussdService.saveSession(session, sessionData);
-
-        return await this.showAccountSelection(sessionData, session, res, 'transferown_source');
+    async cardtransfer(customer, msisdn, session, shortcode, response, res) {
+        const { cardtransfer } = require('./fundsTransfer/cardTransfer');
+        return await cardtransfer(customer, msisdn, session, shortcode, response, res);
     }
 
-    async transferother(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await ussdService.getSession(session);
-
-        if (!response) {
-            sessionData.current_menu = 'transferother';
-            sessionData.previous_menu = 'fundstransfer';
-            await ussdService.saveSession(session, sessionData);
-            return this.displayMenu('transferother', res);
-        }
-
-        if (response === '0' || response === '00') {
-            return await this.handleNavigation(response, sessionData, msisdn, session, shortcode, res);
-        }
-
-        // Validate account number (basic check)
-        if (!response || response.length < 5) {
-            return this.sendResponse(res, 'con', 'Invalid account number. Please enter a valid account:\n\n0. Back\n00. Home');
-        }
-
-        sessionData.to_account = response;
-        sessionData.current_menu = 'transferother_amount';
-        await ussdService.saveSession(session, sessionData);
-
-        return this.displayMenu('transferother_amount', res);
+    async banktransfer(customer, msisdn, session, shortcode, response, res) {
+        const { banktransfer } = require('./fundsTransfer/bankTransfer');
+        return await banktransfer(customer, msisdn, session, shortcode, response, res);
     }
 
-    // Helper methods
-    async showAccountSelection(sessionData, session, res, nextMenu) {
-        const accounts = sessionData.customer.accounts || [];
-        let accountList = '';
-
-        accounts.forEach((account, index) => {
-            accountList += `${index + 1}. ${account}\n`;
-        });
-
-        sessionData.current_menu = nextMenu;
-        await ussdService.saveSession(session, sessionData);
-
-        const message = `Select account:\n${accountList}\n0. Back\n00. Home`;
-        return this.sendResponse(res, 'con', message);
+    async internaltransferbankaccount(customer, msisdn, session, shortcode, response, res) {
+        const { internaltransferbankaccount } = require('./fundsTransfer/internalTransfer');
+        return await internaltransferbankaccount(customer, msisdn, session, shortcode, response, res);
     }
 
-    async handleMenuNavigation(response, handlers, sessionData, msisdn, session, shortcode, res, menuName) {
-        if (handlers[response]) {
-            return await handlers[response]();
-        } else {
-            return this.displayMenu(menuName, res, 'Invalid selection. Please try again.\n\n');
-        }
+    async internaltransferamount(customer, msisdn, session, shortcode, response, res) {
+        const { internaltransferamount } = require('./fundsTransfer/internalTransfer');
+        return await internaltransferamount(customer, msisdn, session, shortcode, response, res);
     }
 
-    async handleNavigation(response, sessionData, msisdn, session, shortcode, res) {
-        // Navigation logic - would be in shared utility
-        return this.sendResponse(res, 'con', 'Navigation not implemented yet');
+    async internaltransferownaccount(customer, msisdn, session, shortcode, response, res) {
+        const { internaltransferownaccount } = require('./fundsTransfer/internalTransfer');
+        return await internaltransferownaccount(customer, msisdn, session, shortcode, response, res);
     }
 
-    displayMenu(menuKey, res, prefix = '') {
-        const menu = this.menus[menuKey];
-        if (!menu) {
-            logger.error(`Menu not found: ${menuKey}`);
-            return this.sendResponse(res, 'end', 'System error. Menu not found.');
-        }
-
-        let message = prefix + menu.message;
-        if (menu.type === 'menu' && menu.options) {
-            message += '\n';
-            const desiredOrder = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '00'];
-            desiredOrder.forEach(key => {
-                if (menu.options[key]) {
-                    message += `${key}. ${menu.options[key]}\n`;
-                }
-            });
-            message = message.trim();
-        }
-
-        return this.sendResponse(res, menu.type === 'end' ? 'end' : 'con', message);
+    async internaltransferremark(customer, msisdn, session, shortcode, response, res) {
+        const { internaltransferremark } = require('./fundsTransfer/internalTransfer');
+        return await internaltransferremark(customer, msisdn, session, shortcode, response, res);
     }
 
-    sendResponse(res, type, message) {
-        const messageSize = Buffer.byteLength(message, 'utf8');
-        logger.info(`FUNDS_TRANSFER_MENU{${type}}: ${message}`);
-        logger.info(`FUNDS_TRANSFER_MENU SIZE: ${messageSize} bytes`);
-        
-        res.set('Content-Type', 'text/plain');
-        return res.send(message);
+    async internaltransfertransaction(customer, msisdn, session, shortcode, response, res) {
+        const { internaltransfertransaction } = require('./fundsTransfer/internalTransfer');
+        return await internaltransfertransaction(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async internaltransferotheraccount(customer, msisdn, session, shortcode, response, res) {
+        const { internaltransferotheraccount } = require('./fundsTransfer/internalTransfer');
+        return await internaltransferotheraccount(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async internaltransferbeneficiary(customer, msisdn, session, shortcode, response, res) {
+        const { internaltransferbeneficiary } = require('./fundsTransfer/internalTransfer');
+        return await internaltransferbeneficiary(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async manageinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res) {
+        const { manageinternaltransferbeneficiary } = require('./fundsTransfer/internalTransfer');
+        return await manageinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async cardnumber(customer, msisdn, session, shortcode, response, res) {
+        const { cardnumber } = require('./fundsTransfer/cardTransfer');
+        return await cardnumber(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async cardamount(customer, msisdn, session, shortcode, response, res) {
+        const { cardamount } = require('./fundsTransfer/cardTransfer');
+        return await cardamount(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async cardbankaccount(customer, msisdn, session, shortcode, response, res) {
+        const { cardbankaccount } = require('./fundsTransfer/cardTransfer');
+        return await cardbankaccount(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async cardremark(customer, msisdn, session, shortcode, response, res) {
+        const { cardremark } = require('./fundsTransfer/cardTransfer');
+        return await cardremark(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async cardtransaction(customer, msisdn, session, shortcode, response, res) {
+        const { cardtransaction } = require('./fundsTransfer/cardTransfer');
+        return await cardtransaction(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async bankfilter(customer, msisdn, session, shortcode, response, res) {
+        const { bankfilter } = require('./fundsTransfer/bankTransfer');
+        return await bankfilter(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async banklist(customer, msisdn, session, shortcode, response, res) {
+        const { banklist } = require('./fundsTransfer/bankTransfer');
+        return await banklist(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async bankbranch(customer, msisdn, session, shortcode, response, res) {
+        const { bankbranch } = require('./fundsTransfer/bankTransfer');
+        return await bankbranch(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async bankbranchlist(customer, msisdn, session, shortcode, response, res) {
+        const { bankbranchlist } = require('./fundsTransfer/bankTransfer');
+        return await bankbranchlist(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async banktrasferaccount(customer, msisdn, session, shortcode, response, res) {
+        const { banktrasferaccount } = require('./fundsTransfer/bankTransfer');
+        return await banktrasferaccount(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async banktrasfername(customer, msisdn, session, shortcode, response, res) {
+        const { banktrasfername } = require('./fundsTransfer/bankTransfer');
+        return await banktrasfername(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async banktrasfermount(customer, msisdn, session, shortcode, response, res) {
+        const { banktrasfermount } = require('./fundsTransfer/bankTransfer');
+        return await banktrasfermount(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async banktrasferbankaccount(customer, msisdn, session, shortcode, response, res) {
+        const { banktrasferbankaccount } = require('./fundsTransfer/bankTransfer');
+        return await banktrasferbankaccount(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async banktrasferremark(customer, msisdn, session, shortcode, response, res) {
+        const { banktrasferremark } = require('./fundsTransfer/bankTransfer');
+        return await banktrasferremark(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async banktrasfertransaction(customer, msisdn, session, shortcode, response, res) {
+        const { banktrasfertransaction } = require('./fundsTransfer/bankTransfer');
+        return await banktrasfertransaction(customer, msisdn, session, shortcode, response, res);
+    }
+
+    // Beneficiary management methods
+    async addinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res) {
+        const { addinternaltransferbeneficiary } = require('./fundsTransfer/internalTransfer');
+        return await addinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async addinternaltransferbeneficiaryname(customer, msisdn, session, shortcode, response, res) {
+        const { addinternaltransferbeneficiaryname } = require('./fundsTransfer/internalTransfer');
+        return await addinternaltransferbeneficiaryname(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async addinternaltransferbeneficiarytransaction(customer, msisdn, session, shortcode, response, res) {
+        const { addinternaltransferbeneficiarytransaction } = require('./fundsTransfer/internalTransfer');
+        return await addinternaltransferbeneficiarytransaction(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async viewinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res) {
+        const { viewinternaltransferbeneficiary } = require('./fundsTransfer/internalTransfer');
+        return await viewinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async viewinternaltransferbeneficiarytransaction(customer, msisdn, session, shortcode, response, res) {
+        const { viewinternaltransferbeneficiarytransaction } = require('./fundsTransfer/internalTransfer');
+        return await viewinternaltransferbeneficiarytransaction(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async deleteinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res) {
+        const { deleteinternaltransferbeneficiary } = require('./fundsTransfer/internalTransfer');
+        return await deleteinternaltransferbeneficiary(customer, msisdn, session, shortcode, response, res);
+    }
+
+    async deleteinternaltransferbeneficiarytransaction(customer, msisdn, session, shortcode, response, res) {
+        const { deleteinternaltransferbeneficiarytransaction } = require('./fundsTransfer/internalTransfer');
+        return await deleteinternaltransferbeneficiarytransaction(customer, msisdn, session, shortcode, response, res);
     }
 }
 

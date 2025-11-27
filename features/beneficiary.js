@@ -1,5 +1,4 @@
 const baseFeature = require('./baseFeature');
-const apiService = require('../services/apiService');
 
 class BeneficiaryService extends baseFeature {
     constructor() {
@@ -8,12 +7,12 @@ class BeneficiaryService extends baseFeature {
 
     async beneficiary(customer, msisdn, session, shortcode, response, res) {
         if (!response) {
-            await this.updateSessionMenu(session, 'beneficiary');
-            return this.displayMenu('beneficiary', res);
+            await this.updateSessionMenu(session, 'beneficiary', 'myaccount');
+            return this.displayMenu('beneficiary', res); // This shows "1. M-PESA"
         }
 
         const menuHandlers = {
-            '1': () => this.managewithdrawbeneficiary(customer, msisdn, session, shortcode, null, res),
+            '1': () => this.managewithdrawbeneficiary(customer, msisdn, session, shortcode, null, res) // Pass null as response to show menu
         };
 
         return await this.handleMenuFlow('beneficiary', response, menuHandlers,
@@ -21,19 +20,49 @@ class BeneficiaryService extends baseFeature {
     }
 
     async managewithdrawbeneficiary(customer, msisdn, session, shortcode, response, res) {
+        const sessionData = await this.ussdService.getSession(session);
+
+        // If no response, show the M-PESA beneficiary management menu
         if (!response) {
             await this.updateSessionMenu(session, 'managewithdrawbeneficiary', 'beneficiary');
             return this.displayMenu('managewithdrawbeneficiary', res);
         }
 
+        // Handle menu selections
+        if (response === '0') {
+            return await this.handleBack(sessionData, 'beneficiaryService', 'beneficiary',
+                msisdn, session, shortcode, res);
+        }
+
+        if (response === '00') {
+            return await this.handleExit(session, res);
+        }
+
+        // Define menu handlers with proper menu names
         const menuHandlers = {
-            '1': () => this.addwithdrawbeneficiary(customer, msisdn, session, shortcode, null, res),
-            '2': () => this.viewwithdrawbeneficiaries(customer, msisdn, session, shortcode, null, res),
-            '3': () => this.deletewithdrawbeneficiary(customer, msisdn, session, shortcode, null, res)
+            '1': {
+                method: () => this.addwithdrawbeneficiary(customer, msisdn, session, shortcode, null, res),
+                menu: 'addwithdrawbeneficiary'
+            },
+            '2': {
+                method: () => this.viewwithdrawbeneficiaries(customer, msisdn, session, shortcode, null, res),
+                menu: 'viewwithdrawbeneficiaries'
+            },
+            '3': {
+                method: () => this.deletewithdrawbeneficiary(customer, msisdn, session, shortcode, null, res),
+                menu: 'deletewithdrawbeneficiary'
+            }
         };
 
-        return await this.handleMenuFlow('managewithdrawbeneficiary', response, menuHandlers,
-            await this.ussdService.getSession(session), msisdn, session, shortcode, res);
+        // Check if it's a valid menu option
+        if (menuHandlers[response]) {
+            // Update session menu to the correct menu name
+            await this.updateSessionMenu(session, menuHandlers[response].menu, 'managewithdrawbeneficiary');
+            return await menuHandlers[response].method();
+        } else {
+            // Invalid option, show menu again
+            return this.displayMenu('managewithdrawbeneficiary', res, 'Invalid selection. Please try again:\n\n');
+        }
     }
 
     async addwithdrawbeneficiary(customer, msisdn, session, shortcode, response, res) {
@@ -41,323 +70,306 @@ class BeneficiaryService extends baseFeature {
 
         if (!response) {
             await this.updateSessionMenu(session, 'addwithdrawbeneficiary', 'managewithdrawbeneficiary');
-            return this.sendResponse(res, 'con', 'Enter M-PESA mobile number:\n\n0. Back\n00. Exit');
-        }
-
-        if (response === '0' || response === '00') {
-            return await this.handleMenuFlow('addwithdrawbeneficiary', response, {}, sessionData, msisdn, session, shortcode, res);
-        }
-
-        if (!this.validateMobileNumber(response)) {
-            return this.sendResponse(res, 'con', 'Invalid mobile number. Please enter a valid M-PESA number:\n\n0. Back\n00. Exit');
-        }
-
-        sessionData.beneficiary_mobile = this.formatMobileNumber(response);
-        sessionData.current_menu = 'addwithdrawbeneficiaryname';
-        await this.ussdService.saveSession(session, sessionData);
-
-        return this.sendResponse(res, 'con', 'Enter beneficiary name:\n\n0. Back\n00. Exit');
-    }
-
-    async addwithdrawbeneficiaryname(customer, msisdn, session, shortcode, response, res) {
-    const sessionData = await this.ussdService.getSession(session);
-
-    if (!response) {
-        return this.sendResponse(res, 'con', 'Enter beneficiary name:\n\n0. Back\n00. Exit');
-    }
-
-    if (response === '0') {
-        // Go back to mobile number entry
-        return await this.addwithdrawbeneficiary(customer, msisdn, session, shortcode, null, res);
-    }
-
-    if (response === '00') {
-        return await this.handleExit(session, res);
-    }
-
-    if (response.length < 2 || response.length > 30) {
-        return this.sendResponse(res, 'con', 'Invalid name. Name should be 2-30 characters:\n\n0. Back\n00. Exit');
-    }
-
-    sessionData.beneficiary_name = response;
-    sessionData.current_menu = 'addwithdrawbeneficiaryconfirm';
-    await this.ussdService.saveSession(session, sessionData);
-
-    const displayMobile = this.formatDisplayMobile(sessionData.beneficiary_mobile);
-    const message = `Save "${response}" - ${displayMobile} as M-PESA beneficiary?\n\n1. Confirm\n2. Cancel\n\n00. Exit`;
-    return this.sendResponse(res, 'con', message);
-}
-
-    async addwithdrawbeneficiaryconfirm(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await this.ussdService.getSession(session);
-
-        // Add validation for required session data
-        if (!sessionData.beneficiary_mobile || !sessionData.beneficiary_name) {
-            this.logger.error(`[BENEFICIARY] Missing session data for confirm: ${JSON.stringify(sessionData)}`);
-            return await this.handleBack(sessionData, 'beneficiaryService', 'managewithdrawbeneficiary', msisdn, session, shortcode, res);
-        }
-
-        if (!response) {
-            const displayMobile = this.formatDisplayMobile(sessionData.beneficiary_mobile);
-            const message = `Save "${sessionData.beneficiary_name}" - ${displayMobile} as M-PESA beneficiary?\n\n1. Confirm\n2. Cancel\n\n00. Exit`;
+            // Add back/exit options to input screens
+            const message = "Enter the M-PESA mobile number\n\nFormat: 07_ or 01_\n\n0. Back\n00. Exit";
             return this.sendResponse(res, 'con', message);
+        }
+
+        if (response === '0') {
+            return await this.handleBack(sessionData, 'beneficiaryService', 'managewithdrawbeneficiary',
+                msisdn, session, shortcode, res);
         }
 
         if (response === '00') {
             return await this.handleExit(session, res);
         }
 
-        if (response === '1') {
-            try {
-                const result = await this.saveBeneficiary(customer, msisdn, session, shortcode, {
-                    name: sessionData.beneficiary_name,
-                    mobile: sessionData.beneficiary_mobile,
-                    type: 'MPESA'
-                });
-
-                if (result.STATUS === '000' || result.STATUS === 'OK') {
-                    // Clear temporary data but maintain navigation state
-                    delete sessionData.beneficiary_mobile;
-                    delete sessionData.beneficiary_name;
-                    sessionData.current_menu = 'managewithdrawbeneficiary';
-                    sessionData.previous_menu = 'beneficiary';
-                    await this.ussdService.saveSession(session, sessionData);
-
-                    return this.sendResponse(res, 'con', `M-PESA beneficiary saved successfully!\n\n0. Back\n00. Exit`);
-                } else {
-                    const errorMsg = result.DATA || 'Failed to save beneficiary';
-                    return this.sendResponse(res, 'end', `Error: ${errorMsg}`);
-                }
-            } catch (error) {
-                this.logger.error(`[BENEFICIARY] Save Error: ${error.message}`);
-                return this.sendResponse(res, 'end', 'Service temporarily unavailable. Please try again later.');
-            }
-        } else if (response === '2') {
-            // Cancel - go back to name entry
-            return await this.addwithdrawbeneficiaryname(customer, msisdn, session, shortcode, null, res);
+        // Validate mobile number
+        if (!this.validateMobileNumber(response)) {
+            const errorMessage = "Invalid mobile number. Please enter a valid M-PESA number:\n\nFormat: 07_ or 01_\n\n0. Back\n00. Exit";
+            return this.sendResponse(res, 'con', errorMessage);
         }
 
-        return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n1. Confirm\n2. Cancel\n\n00. Exit');
+        sessionData.beneficiaryMobile = this.formatMobileNumber(response);
+        await this.ussdService.saveSession(session, sessionData);
+
+        return await this.addwithdrawbeneficiaryname(customer, msisdn, session, shortcode, null, res);
+    }
+
+    async addwithdrawbeneficiaryname(customer, msisdn, session, shortcode, response, res) {
+        const sessionData = await this.ussdService.getSession(session);
+
+        if (!response) {
+            await this.updateSessionMenu(session, 'addwithdrawbeneficiaryname', 'addwithdrawbeneficiary');
+            // Add back/exit options
+            const message = "Enter beneficiary name\n\n0. Back\n00. Exit";
+            return this.sendResponse(res, 'con', message);
+        }
+
+        if (response === '0') {
+            return await this.handleBack(sessionData, 'beneficiaryService', 'addwithdrawbeneficiary',
+                msisdn, session, shortcode, res);
+        }
+
+        if (response === '00') {
+            return await this.handleExit(session, res);
+        }
+
+        if (response.length < 2) {
+            const errorMessage = "Invalid name. Please enter a proper name:\n\n0. Back\n00. Exit";
+            return this.sendResponse(res, 'con', errorMessage);
+        }
+
+        sessionData.beneficiaryName = response;
+        await this.ussdService.saveSession(session, sessionData);
+
+        return await this.addwithdrawbeneficiaryconfirm(customer, msisdn, session, shortcode, null, res);
     }
 
     async viewwithdrawbeneficiaries(customer, msisdn, session, shortcode, response, res) {
         const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            sessionData.current_menu = 'viewwithdrawbeneficiaries';
-            sessionData.previous_menu = 'managewithdrawbeneficiary';
-            await this.ussdService.saveSession(session, sessionData);
+            await this.updateSessionMenu(session, 'viewwithdrawbeneficiaries', 'managewithdrawbeneficiary');
 
             try {
-                const beneficiaries = await this.getBeneficiaries(customer, msisdn, session, shortcode, 'MPESA');
+                // Get beneficiaries from API
+                const result = await this.ussdService.getInternalTransferBeneficiaries(
+                    customer, msisdn, session, shortcode
+                );
 
-                if (!beneficiaries || beneficiaries.length === 0) {
-                    const message = 'No M-PESA beneficiaries found.\n\n0. Back\n00. Exit';
-                    return this.sendResponse(res, 'con', message);
+                this.logger.info(`[BENEFICIARY] View beneficiaries raw result: ${JSON.stringify(result)}`);
+
+                let message = "Your M-PESA Beneficiaries:\n\n";
+
+                if (result.STATUS === '000' || result.STATUS === 'OK') {
+                    const beneficiaries = this.parseBeneficiaries(result.DATA);
+                    this.logger.info(`[BENEFICIARY] Parsed beneficiaries: ${JSON.stringify(beneficiaries)}`);
+
+                    if (beneficiaries.length > 0) {
+                        beneficiaries.forEach((beneficiary, index) => {
+                            const [account, alias] = beneficiary;
+                            message += `${index + 1}. ${alias} - ${this.formatDisplayMobile(account)}\n`;
+                        });
+                    } else {
+                        message += "No beneficiaries found.\n";
+                    }
+                } else {
+                    message += "Unable to load beneficiaries.\n";
                 }
 
-                let message = 'Your M-PESA Beneficiaries:\n\n';
-                beneficiaries.forEach((beneficiary, index) => {
-                    const displayMobile = this.formatDisplayMobile(beneficiary.mobile);
-                    message += `${index + 1}. ${beneficiary.name} - ${displayMobile}\n`;
-                });
-
-                message += '\n0. Back\n00. Exit';
-                sessionData.beneficiaries = beneficiaries;
-                await this.ussdService.saveSession(session, sessionData);
-
+                message += "\n0. Back\n00. Exit";
                 return this.sendResponse(res, 'con', message);
+
             } catch (error) {
-                this.logger.error(`[BENEFICIARY] View Error: ${error.message}`);
-                return this.sendResponse(res, 'end', 'Unable to fetch beneficiaries. Please try again later.');
+                this.logger.error(`[BENEFICIARY] View beneficiaries error: ${error.message}`);
+                return this.sendResponse(res, 'con', "Unable to load beneficiaries at the moment.\n\n0. Back\n00. Exit");
             }
         }
 
-        if (response === '0' || response === '00') {
-            return await this.handleMenuFlow('viewwithdrawbeneficiaries', response, {}, sessionData, msisdn, session, shortcode, res);
-        }
-
-        return this.sendResponse(res, 'con', 'Select an option:\n\n0. Back\n00. Exit');
-    }
-
-    async deletewithdrawbeneficiary(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await this.ussdService.getSession(session);
-
-        if (!response) {
-            sessionData.current_menu = 'deletewithdrawbeneficiary';
-            sessionData.previous_menu = 'managewithdrawbeneficiary';
-            await this.ussdService.saveSession(session, sessionData);
-
-            try {
-                const beneficiaries = await this.getBeneficiaries(customer, msisdn, session, shortcode, 'MPESA');
-
-                if (!beneficiaries || beneficiaries.length === 0) {
-                    const message = 'No M-PESA beneficiaries to delete.\n\n0. Back\n00. Exit';
-                    return this.sendResponse(res, 'con', message);
-                }
-
-                let message = 'Select beneficiary to delete:\n\n';
-                beneficiaries.forEach((beneficiary, index) => {
-                    const displayMobile = this.formatDisplayMobile(beneficiary.mobile);
-                    message += `${index + 1}. ${beneficiary.name} - ${displayMobile}\n`;
-                });
-
-                message += '\n0. Back\n00. Exit';
-                sessionData.beneficiaries = beneficiaries;
-                await this.ussdService.saveSession(session, sessionData);
-
-                return this.sendResponse(res, 'con', message);
-            } catch (error) {
-                this.logger.error(`[BENEFICIARY] Delete List Error: ${error.message}`);
-                return this.sendResponse(res, 'end', 'Unable to fetch beneficiaries. Please try again later.');
-            }
-        }
-
-        if (response === '0' || response === '00') {
-            return await this.handleMenuFlow('deletewithdrawbeneficiary', response, {}, sessionData, msisdn, session, shortcode, res);
-        }
-
-        const selectedIndex = parseInt(response) - 1;
-        const beneficiaries = sessionData.beneficiaries || [];
-
-        if (beneficiaries[selectedIndex]) {
-            const beneficiary = beneficiaries[selectedIndex];
-            sessionData.selected_beneficiary = beneficiary;
-            sessionData.current_menu = 'deletebeneficiaryconfirm';
-            await this.ussdService.saveSession(session, sessionData);
-
-            const displayMobile = this.formatDisplayMobile(beneficiary.mobile);
-            const message = `Delete ${beneficiary.name} - ${displayMobile}?\n\n1. Confirm\n2. Cancel\n\n00. Exit`;
-            return this.sendResponse(res, 'con', message);
-        } else {
-            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n0. Back\n00. Exit');
-        }
-    }
-
-    async deletebeneficiaryconfirm(customer, msisdn, session, shortcode, response, res) {
-        const sessionData = await this.ussdService.getSession(session);
-
-        // Check if selected beneficiary exists
-        if (!sessionData.selected_beneficiary || !sessionData.selected_beneficiary.mobile) {
-            // Session expired or invalid state - restart the flow
-            return await this.managewithdrawbeneficiary(customer, msisdn, session, shortcode, null, res);
-        }
-
-        if (!response) {
-            const beneficiary = sessionData.selected_beneficiary;
-            const displayMobile = this.formatDisplayMobile(beneficiary.mobile);
-            const message = `Delete ${beneficiary.name} - ${displayMobile}?\n\n1. Confirm\n2. Cancel\n\n00. Exit`;
-            return this.sendResponse(res, 'con', message);
+        if (response === '0') {
+            return await this.handleBack(sessionData, 'beneficiaryService', 'managewithdrawbeneficiary',
+                msisdn, session, shortcode, res);
         }
 
         if (response === '00') {
             return await this.handleExit(session, res);
         }
 
-        if (response === '1') {
-            try {
-                const result = await this.deleteBeneficiary(customer, msisdn, session, shortcode, sessionData.selected_beneficiary);
+        // If user enters any other number (1, 2, etc.), just show the same view again
+        // This prevents accidental navigation when user tries to select a beneficiary
+        return await this.viewwithdrawbeneficiaries(customer, msisdn, session, shortcode, null, res);
+    }
 
-                // Clear selected beneficiary and reset menu
-                delete sessionData.selected_beneficiary;
-                delete sessionData.beneficiaries;
-                sessionData.current_menu = 'managewithdrawbeneficiary';
-                sessionData.previous_menu = 'beneficiary';
-                await this.ussdService.saveSession(session, sessionData);
+    async deletewithdrawbeneficiary(customer, msisdn, session, shortcode, response, res) {
+        let sessionData = await this.ussdService.getSession(session);
+
+        this.logger.info(`[BENEFICIARY DEBUG] deletewithdrawbeneficiary called`);
+        this.logger.info(`[BENEFICIARY DEBUG] Response: "${response}"`);
+        this.logger.info(`[BENEFICIARY DEBUG] Session menu: ${sessionData.current_menu}`);
+        this.logger.info(`[BENEFICIARY DEBUG] Session beneficiaries: ${JSON.stringify(sessionData.beneficiaries)}`);
+
+        if (!response || response === 'null') {
+            this.logger.info(`[BENEFICIARY DEBUG] Showing delete beneficiary list`);
+
+            await this.updateSessionMenu(session, 'deletewithdrawbeneficiary', 'managewithdrawbeneficiary');
+
+            try {
+                // Get beneficiaries from API
+                const result = await this.ussdService.getInternalTransferBeneficiaries(
+                    customer, msisdn, session, shortcode
+                );
+
+                this.logger.info(`[BENEFICIARY] Delete beneficiaries raw result: ${JSON.stringify(result)}`);
+
+                let message = "Select beneficiary to delete:\n\n";
 
                 if (result.STATUS === '000' || result.STATUS === 'OK') {
-                    return this.sendResponse(res, 'con', 'Beneficiary deleted successfully!\n\n0. Back\n00. Exit');
+                    const beneficiaries = this.parseBeneficiaries(result.DATA);
+                    this.logger.info(`[BENEFICIARY] Parsed beneficiaries for delete: ${JSON.stringify(beneficiaries)}`);
+
+                    // Save to session and verify it was saved
+                    sessionData.beneficiaries = beneficiaries;
+                    await this.ussdService.saveSession(session, sessionData);
+
+                    // Verify the save worked
+                    const verifySession = await this.ussdService.getSession(session);
+                    this.logger.info(`[BENEFICIARY] Verified session beneficiaries: ${JSON.stringify(verifySession.beneficiaries)}`);
+
+                    if (beneficiaries.length > 0) {
+                        beneficiaries.forEach((beneficiary, index) => {
+                            const [account, alias] = beneficiary;
+                            message += `${index + 1}. ${alias} - ${this.formatDisplayMobile(account)}\n`;
+                        });
+                    } else {
+                        message += "No beneficiaries found.\n";
+                    }
                 } else {
-                    const errorMsg = result.DATA || 'Failed to delete beneficiary';
-                    return this.sendResponse(res, 'end', `Error: ${errorMsg}`);
+                    message += "Unable to load beneficiaries.\n";
                 }
+
+                message += "\n0. Back\n00. Exit";
+                return this.sendResponse(res, 'con', message);
+
             } catch (error) {
-                this.logger.error(`[BENEFICIARY] Delete Error: ${error.message}`);
-                return this.sendResponse(res, 'end', 'Service temporarily unavailable. Please try again later.');
+                this.logger.error(`[BENEFICIARY] Delete beneficiaries error: ${error.message}`);
+                return this.sendResponse(res, 'con', "Unable to load beneficiaries at the moment.\n\n0. Back\n00. Exit");
             }
-        } else if (response === '2') {
-            // Cancel - go back to delete list
-            delete sessionData.selected_beneficiary;
-            await this.ussdService.saveSession(session, sessionData);
-            return await this.deletewithdrawbeneficiary(customer, msisdn, session, shortcode, null, res);
         } else {
-            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n1. Confirm\n2. Cancel\n\n00. Exit');
+            this.logger.info(`[BENEFICIARY DEBUG] Processing selection: ${response}`);
+
+            // Refresh session data
+            sessionData = await this.ussdService.getSession(session);
+
+            if (response === '0') {
+                this.logger.info(`[BENEFICIARY DEBUG] Handling back navigation`);
+                return await this.handleBack(sessionData, 'beneficiaryService', 'managewithdrawbeneficiary',
+                    msisdn, session, shortcode, res);
+            }
+
+            if (response === '00') {
+                this.logger.info(`[BENEFICIARY DEBUG] Handling exit`);
+                return await this.handleExit(session, res);
+            }
+
+            // Process beneficiary selection
+            const beneficiaryIndex = parseInt(response) - 1;
+            const beneficiaries = sessionData.beneficiaries || [];
+
+            this.logger.info(`[BENEFICIARY DEBUG] Processing selection ${response} as index ${beneficiaryIndex}`);
+
+            if (isNaN(beneficiaryIndex) || beneficiaryIndex < 0 || beneficiaryIndex >= beneficiaries.length) {
+                this.logger.info(`[BENEFICIARY DEBUG] Invalid selection`);
+                return this.sendResponse(res, 'con', "Invalid selection.\n\n0. Back\n00. Exit");
+            }
+
+            const selectedBeneficiary = beneficiaries[beneficiaryIndex];
+            sessionData.selectedBeneficiary = selectedBeneficiary;
+            await this.ussdService.saveSession(session, sessionData);
+
+            this.logger.info(`[BENEFICIARY DEBUG] Proceeding to confirmation for: ${JSON.stringify(selectedBeneficiary)}`);
+            return await this.deletebeneficiaryconfirm(customer, msisdn, session, shortcode, null, res);
         }
     }
 
-    async deleteBeneficiary(customer, msisdn, session, shortcode, beneficiary) {
-        const formid = 'O-DeleteUtilityAlias';
-        const data = `FORMID:${formid}:SERVICETYPE:MMONEY:UTILITYID:MPESA:UTILITYACCOUNTID:${beneficiary.mobile}:UTILITYALIAS:${beneficiary.name}:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}`;
+    async deletebeneficiaryconfirm(customer, msisdn, session, shortcode, response, res) {
+        const sessionData = await this.ussdService.getSession(session);
 
-        this.logger.info(`[BENEFICIARY] Deleting beneficiary: ${JSON.stringify(beneficiary)}`);
+        if (!response) {
+            await this.updateSessionMenu(session, 'deletebeneficiaryconfirm', 'deletewithdrawbeneficiary');
 
-        const apiService = require('../services/apiService');
-        return await apiService.makeRequest(formid, data, msisdn, session, shortcode);
-    }
+            const [account, alias] = sessionData.selectedBeneficiary || ['', ''];
+            const mobile = this.formatDisplayMobile(account);
 
-    async saveBeneficiary(customer, msisdn, session, shortcode, beneficiaryData) {
-        const formid = 'O-AddUtilityAlias';
-        const data = `FORMID:${formid}:SERVICETYPE:MMONEY:UTILITYID:MPESA:UTILITYACCOUNTID:${beneficiaryData.mobile}:UTILITYALIAS:${beneficiaryData.name}:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}`;
+            const message = `Delete ${alias} - ${mobile} from beneficiaries?\n\n1. Confirm\n2. Cancel`;
+            return this.sendResponse(res, 'con', message);
+        }
 
-        this.logger.info(`[BENEFICIARY] Saving beneficiary: ${JSON.stringify(beneficiaryData)}`);
-        return await apiService.makeRequest(formid, data, msisdn, session, shortcode);
-    }
+        if (response === '0') {
+            return await this.handleBack(sessionData, 'beneficiaryService', 'deletewithdrawbeneficiary',
+                msisdn, session, shortcode, res);
+        }
 
-    async getBeneficiaries(customer, msisdn, session, shortcode, type) {
-        const formid = 'O-GetUtilityAlias';
-        const data = `FORMID:${formid}:SERVICETYPE:MMONEY:SERVICEID:MPESA:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}`;
+        if (response === '00') {
+            return await this.handleExit(session, res);
+        }
+
+        if (response === '2') {
+            return await this.handleBack(sessionData, 'beneficiaryService', 'managewithdrawbeneficiary',
+                msisdn, session, shortcode, res);
+        }
+
+        if (response !== '1') {
+            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n1. Confirm\n2. Cancel');
+        }
 
         try {
-            const response = await apiService.makeRequest(formid, data, msisdn, session, shortcode);
+            const [account, alias] = sessionData.selectedBeneficiary || ['', ''];
 
-            if (response.STATUS === '000' || response.STATUS === 'OK') {
-                return this.parseBeneficiaries(response.DATA);
+            // Call API to delete beneficiary
+            const result = await this.ussdService.deleteInternalTransferBeneficiary(
+                customer,
+                account,
+                alias,
+                msisdn, session, shortcode
+            );
+
+            // Clear session data
+            delete sessionData.selectedBeneficiary;
+            delete sessionData.beneficiaries;
+            await this.ussdService.saveSession(session, sessionData);
+
+            if (result.STATUS === '000' || result.STATUS === 'OK') {
+                const successMessage = result.DATA || 'Beneficiary deleted successfully';
+                return this.sendResponse(res, 'con', `${successMessage}\n\n0. Back\n00. Exit`);
             } else {
-                this.logger.warn(`[BENEFICIARY] Get beneficiaries failed: ${response.DATA}`);
-                return [];
+                const errorMessage = result.DATA || 'Failed to delete beneficiary. Please try again.';
+                return this.sendResponse(res, 'con', `${errorMessage}\n\n0. Back\n00. Exit`);
             }
         } catch (error) {
-            this.logger.error(`[BENEFICIARY] Get beneficiaries error: ${error.message}`);
-            throw error;
+            this.logger.error(`[BENEFICIARY] Delete beneficiary error: ${error.message}`);
+            return this.sendResponse(res, 'end', 'Service temporarily unavailable. Please try again later.');
         }
-    }
-
-    async cleanupSession(session) {
-        const sessionData = await this.ussdService.getSession(session);
-        delete sessionData.beneficiary_mobile;
-        delete sessionData.beneficiary_name;
-        delete sessionData.selected_beneficiary;
-        delete sessionData.beneficiaries;
-        await this.ussdService.saveSession(session, sessionData);
     }
 
     parseBeneficiaries(data) {
-        if (!data) return [];
-
         try {
             const beneficiaries = [];
-            const items = data.split(';');
+            if (data && typeof data === 'string') {
+                this.logger.info(`[BENEFICIARY] Raw data to parse: "${data}"`);
 
-            for (const item of items) {
-                if (item.trim()) {
-                    const parts = item.split(',');
+                // Split by ~ and filter out empty items
+                const items = data.split('~').filter(item => item.trim() && item !== '|' && item !== '');
+
+                for (const item of items) {
+                    this.logger.info(`[BENEFICIARY] Processing item: "${item}"`);
+
+                    // Split by | and filter out empty parts
+                    const parts = item.split('|').filter(part => part.trim());
+
+                    // We need at least account and name
                     if (parts.length >= 2) {
-                        const name = parts[parts.length - 1];
-                        const mobile = parts[parts.length - 2];
-                        if (name && mobile) {
-                            beneficiaries.push({
-                                name: name.trim(),
-                                mobile: mobile.trim(),
-                                type: 'MPESA'
-                            });
+                        const account = parts[0].trim();
+                        const alias = parts[1].trim();
+
+                        // Only add if both account and alias have values
+                        if (account && alias) {
+                            beneficiaries.push([account, alias]);
+                            this.logger.info(`[BENEFICIARY] Added beneficiary: ${account} - ${alias}`);
+                        } else {
+                            this.logger.warn(`[BENEFICIARY] Skipping invalid beneficiary: account=${account}, alias=${alias}`);
                         }
+                    } else {
+                        this.logger.warn(`[BENEFICIARY] Insufficient parts in item: ${item}`);
                     }
                 }
             }
 
+            this.logger.info(`[BENEFICIARY] Successfully parsed ${beneficiaries.length} beneficiaries`);
             return beneficiaries;
+
         } catch (error) {
-            this.logger.error(`[BENEFICIARY] Parse beneficiaries error: ${error.message}`);
+            this.logger.error(`[BENEFICIARY] Error parsing beneficiaries: ${error.message}`);
             return [];
         }
     }

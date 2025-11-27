@@ -6,7 +6,7 @@ class AirtimeService extends baseFeature {
         super();
         this.networks = {
             'Safaricom': 'CSSAFCOMKE',
-            'Airtel': 'CSAIRTELKE', 
+            'Airtel': 'CSAIRTELKE',
             'Telkom': 'CSORANGEKE'
         };
     }
@@ -16,7 +16,7 @@ class AirtimeService extends baseFeature {
 
         if (!response) {
             await this.updateSessionMenu(session, 'airtime', 'mobilebanking');
-            
+
             const message = 'Airtime\n\n1. Own Number\n2. Other Number\n3. Saved Beneficiary\n\n0. Back\n00. Exit';
             return this.sendResponse(res, 'con', message);
         }
@@ -67,6 +67,8 @@ class AirtimeService extends baseFeature {
         sessionData.airtime_method = 'airtimebeneficiary';
         await this.ussdService.saveSession(session, sessionData);
 
+        await this.updateSessionMenu(session, 'airtimenetwork', 'airtime');
+
         return await this.airtimenetwork(customer, msisdn, session, shortcode, null, res);
     }
 
@@ -84,16 +86,16 @@ class AirtimeService extends baseFeature {
 
         if (!response) {
             await this.updateSessionMenu(session, 'airtimenetwork', 'airtime');
-            
+
             let message = 'Select Network\n\n';
             const mode = sessionData.airtime_mode;
-            
+
             if (mode === 'own') {
                 message += '1. Safaricom\n2. Airtel\n';
             } else {
                 message += '1. Safaricom\n2. Airtel\n3. Telkom\n';
             }
-            
+
             message += '\n0. Back\n00. Exit';
             return this.sendResponse(res, 'con', message);
         }
@@ -123,10 +125,10 @@ class AirtimeService extends baseFeature {
         }
 
         const selectedIndex = parseInt(response) - 1;
-        
+
         if (networkOptions[selectedIndex]) {
             const [networkName, merchantId] = networkOptions[selectedIndex];
-            
+
             sessionData.airtimenetwork = networkName;
             sessionData.airtimenetworkid = merchantId;
             await this.ussdService.saveSession(session, sessionData);
@@ -139,70 +141,110 @@ class AirtimeService extends baseFeature {
     }
 
     async airtimebeneficiary(customer, msisdn, session, shortcode, response, res) {
-    const sessionData = await this.ussdService.getSession(session);
+        // Get fresh session data
+        let sessionData = await this.ussdService.getSession(session);
 
-    try {
-        const fetchedBeneficiaries = await this.getAirtimeBeneficiaries(customer, msisdn, session, shortcode, sessionData.airtimenetworkid);
+        // ADD COMPREHENSIVE DEBUG LOGGING
+        this.logger.info(`[AIRTIME DEBUG] ===== ENTERING AIRTIMEBENEFICIARY =====`);
+        this.logger.info(`[AIRTIME DEBUG] Response: "${response}"`);
+        this.logger.info(`[AIRTIME DEBUG] Current menu before update: ${sessionData.current_menu}`);
+        this.logger.info(`[AIRTIME DEBUG] Airtime mode: ${sessionData.airtime_mode}`);
+        this.logger.info(`[AIRTIME DEBUG] Airtime network: ${sessionData.airtimenetwork}`);
 
-        if (!fetchedBeneficiaries || fetchedBeneficiaries.length === 0) {
-            const message = `No saved ${sessionData.airtimenetwork} airtime beneficiaries found.\n\n0. Back\n00. Exit`;
-            return this.sendResponse(res, 'con', message);
+        try {
+            // If no response, we're entering this menu for the first time
+            if (!response) {
+                this.logger.info(`[AIRTIME DEBUG] First time entering airtimebeneficiary`);
+
+                // FIX: Update session menu BEFORE fetching beneficiaries
+                await this.updateSessionMenu(session, 'airtimebeneficiary', 'airtimenetwork');
+
+                // Refresh session data after update
+                sessionData = await this.ussdService.getSession(session);
+                this.logger.info(`[AIRTIME DEBUG] Menu after update: ${sessionData.current_menu}`);
+
+                const fetchedBeneficiaries = await this.getAirtimeBeneficiaries(customer, msisdn, session, shortcode, sessionData.airtimenetworkid);
+
+                this.logger.info(`[AIRTIME] Fetched ${fetchedBeneficiaries.length} beneficiaries for network: ${sessionData.airtimenetwork}`);
+
+                if (!fetchedBeneficiaries || fetchedBeneficiaries.length === 0) {
+                    const message = `No saved ${sessionData.airtimenetwork} airtime beneficiaries found.\n\n0. Back\n00. Exit`;
+                    return this.sendResponse(res, 'con', message);
+                }
+
+                let message = 'Select beneficiary:\n\n';
+                fetchedBeneficiaries.forEach((beneficiary, index) => {
+                    const [merchantId, mobileNumber, alias] = beneficiary;
+                    const displayMobile = this.formatDisplayMobile(mobileNumber);
+                    message += `${index + 1}. ${alias} (${displayMobile})\n`;
+                });
+
+                message += '\n0. Back\n00. Exit';
+
+                // Save beneficiaries to session
+                sessionData.airtime_beneficiaries = fetchedBeneficiaries;
+                await this.ussdService.saveSession(session, sessionData);
+
+                this.logger.info(`[AIRTIME DEBUG] Showing beneficiary selection menu`);
+                return this.sendResponse(res, 'con', message);
+            }
+
+            // Handle back navigation
+            if (response === '0') {
+                this.logger.info(`[AIRTIME DEBUG] Back navigation from airtimebeneficiary`);
+                return await this.airtimenetwork(customer, msisdn, session, shortcode, null, res);
+            }
+
+            // Handle exit
+            if (response === '00') {
+                this.logger.info(`[AIRTIME DEBUG] Exit from airtimebeneficiary`);
+                return await this.handleExit(session, res);
+            }
+
+            // Handle beneficiary selection
+            this.logger.info(`[AIRTIME DEBUG] Processing beneficiary selection: ${response}`);
+
+            const selectedIndex = parseInt(response) - 1;
+            const sessionBeneficiaries = sessionData.airtime_beneficiaries || [];
+
+            this.logger.info(`[AIRTIME DEBUG] Selected index: ${selectedIndex}, Available beneficiaries: ${sessionBeneficiaries.length}`);
+
+            if (sessionBeneficiaries[selectedIndex]) {
+                const [merchantId, mobileNumber, alias] = sessionBeneficiaries[selectedIndex];
+
+                this.logger.info(`[AIRTIME DEBUG] Selected beneficiary: ${alias} (${mobileNumber})`);
+
+                // Update session data
+                sessionData.airtimemsisdn = mobileNumber;
+                await this.ussdService.saveSession(session, sessionData);
+
+                // FIX: Update menu BEFORE calling next method
+                await this.updateSessionMenu(session, 'airtimeamount', 'airtimebeneficiary');
+
+                this.logger.info(`[AIRTIME DEBUG] Proceeding to airtimeamount with mobile: ${mobileNumber}`);
+
+                return await this.airtimeamount(customer, msisdn, session, shortcode, null, res);
+            } else {
+                this.logger.warn(`[AIRTIME DEBUG] Invalid beneficiary selection: ${response}`);
+                return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n0. Back\n00. Exit');
+            }
+        } catch (error) {
+            this.logger.error(`[AIRTIME] Get beneficiaries error: ${error.message}`);
+            return this.sendResponse(res, 'con', 'Unable to fetch beneficiaries. Please try again later.\n\n0. Back\n00. Exit');
         }
-
-        if (!response) {
-            await this.updateSessionMenu(session, 'airtimebeneficiary', 'airtimenetwork');
-            
-            let message = 'Select beneficiary:\n\n';
-            fetchedBeneficiaries.forEach((beneficiary, index) => {
-                const [merchantId, mobileNumber, alias] = beneficiary;
-                const displayMobile = this.formatDisplayMobile(mobileNumber);
-                message += `${index + 1}. ${alias} (${displayMobile})\n`;
-            });
-
-            message += '\n0. Back\n00. Exit';
-            sessionData.beneficiaries = fetchedBeneficiaries; // Store in session
-            await this.ussdService.saveSession(session, sessionData);
-
-            return this.sendResponse(res, 'con', message);
-        }
-
-        if (response === '0') {
-            return await this.airtimenetwork(customer, msisdn, session, shortcode, null, res);
-        }
-
-        if (response === '00') {
-            return await this.handleExit(session, res);
-        }
-
-        const selectedIndex = parseInt(response) - 1;
-        const sessionBeneficiaries = sessionData.beneficiaries || []; // Use different name
-
-        if (sessionBeneficiaries[selectedIndex]) {
-            const [merchantId, mobileNumber, alias] = sessionBeneficiaries[selectedIndex];
-            sessionData.airtimemsisdn = mobileNumber;
-            await this.ussdService.saveSession(session, sessionData);
-
-            return await this.airtimeamount(customer, msisdn, session, shortcode, null, res);
-        } else {
-            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n0. Back\n00. Exit');
-        }
-    } catch (error) {
-        this.logger.error(`[AIRTIME] Get beneficiaries error: ${error.message}`);
-        return this.sendResponse(res, 'con', 'Unable to fetch beneficiaries. Please try again later.\n\n0. Back\n00. Exit');
     }
-}
 
     async airtimemsisdn(customer, msisdn, session, shortcode, response, res) {
         const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
             await this.updateSessionMenu(session, 'airtimemsisdn', 'airtimenetwork');
-            
+
             let message = `Enter the ${sessionData.airtimenetwork} mobile number\n\nFormat: 07_ or 01_\n\n`;
             if (sessionData.airtimenetwork === 'Telkom') {
                 message = `Enter the ${sessionData.airtimenetwork} mobile number\n\nFormat: 07_\n\n`;
             }
-            
+
             message += '0. Back\n00. Exit';
             return this.sendResponse(res, 'con', message);
         }
@@ -229,10 +271,10 @@ class AirtimeService extends baseFeature {
         const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            await this.updateSessionMenu(session, 'airtimeamount', 
+            await this.updateSessionMenu(session, 'airtimeamount',
                 sessionData.airtime_mode === 'other' ? 'airtimemsisdn' :
-                sessionData.airtime_mode === 'beneficiary' ? 'airtimebeneficiary' : 'airtimenetwork');
-            
+                    sessionData.airtime_mode === 'beneficiary' ? 'airtimebeneficiary' : 'airtimenetwork');
+
             return this.sendResponse(res, 'con', 'Enter Amount\n\n0. Back\n00. Exit');
         }
 
@@ -337,7 +379,7 @@ class AirtimeService extends baseFeature {
 
             if (result.STATUS === '000' || result.STATUS === 'OK') {
                 // Clear session data
-                this.clearAirtimeSession(session);
+                await this.clearAirtimeSession(session);
 
                 const successMessage = result.DATA || 'Airtime purchase completed successfully';
                 return this.sendResponse(res, 'con', `${successMessage}\n\n0. Back\n00. Exit`);
@@ -354,14 +396,11 @@ class AirtimeService extends baseFeature {
     // ========== HELPER METHODS ==========
 
     async getAirtimeBeneficiaries(customer, msisdn, session, shortcode, merchantid) {
-        const formid = 'O-GetUtilityAlias';
-        const data = `FORMID:${formid}:SERVICETYPE:Airtime:SERVICEID:${merchantid}:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}`;
-
         try {
-            const response = await apiService.makeRequest(formid, data, msisdn, session, shortcode);
+            const response = await this.ussdService.getAirtimeBeneficiaries(customer, merchantid, msisdn, session, shortcode);
 
             if (response.STATUS === '000' || response.STATUS === 'OK') {
-                return this.parseBeneficiaries(response.DATA);
+                return this.ussdService.parseAirtimeBeneficiaries(response);
             } else {
                 this.logger.warn(`[AIRTIME] Get beneficiaries failed: ${response.DATA}`);
                 return [];
@@ -372,46 +411,12 @@ class AirtimeService extends baseFeature {
         }
     }
 
-    parseBeneficiaries(data) {
-        if (!data) return [];
-
-        try {
-            const beneficiaries = [];
-            const items = data.split(';');
-
-            for (const item of items) {
-                if (item.trim()) {
-                    const parts = item.split(',');
-                    if (parts.length >= 3) {
-                        const merchantId = parts[0];
-                        const mobileNumber = parts[1];
-                        const alias = parts[2];
-                        if (merchantId && mobileNumber && alias) {
-                            beneficiaries.push([
-                                merchantId.trim(),
-                                mobileNumber.trim(),
-                                alias.trim()
-                            ]);
-                        }
-                    }
-                }
-            }
-
-            return beneficiaries;
-        } catch (error) {
-            this.logger.error(`[AIRTIME] Parse beneficiaries error: ${error.message}`);
-            return [];
-        }
-    }
-
     async processAirtimeTransaction(customer, msisdn, session, shortcode, sessionData, pin) {
         const customerid = customer.customerid;
         const amount = sessionData.airtimeamount;
         const accountid = sessionData.airtimemsisdn;
         const merchantid = sessionData.airtimenetworkid;
         const bankaccountid = sessionData.airtimebankaccount;
-
-        const data = `MERCHANTID:${merchantid}:BANKACCOUNTID:${bankaccountid}:ACCOUNTID:${accountid}:AMOUNT:${amount}:CUSTOMERID:${customerid}:MOBILENUMBER:${msisdn}:ACTION:PAYBILL:TMPIN:${pin}`;
 
         this.logger.info(`[AIRTIME] Processing airtime transaction:`, {
             merchantid,
@@ -420,18 +425,17 @@ class AirtimeService extends baseFeature {
             bankaccountid
         });
 
-        return await apiService.makeRequest('M-', data, msisdn, session, shortcode);
+        return await this.ussdService.handleAirtimePurchase(
+            customer, merchantid, accountid, amount, bankaccountid, pin, msisdn, session, shortcode
+        );
     }
 
     async getTransactionCharges(customer, msisdn, session, shortcode, merchantid, amount) {
-        const formid = 'O-GetBankMerchantCharges';
-        const data = `FORMID:${formid}:MERCHANTID:${merchantid}:AMOUNT:${amount}:CUSTOMERID:${customer.customerid}:MOBILENUMBER:${msisdn}`;
-
         try {
-            const response = await apiService.makeRequest(formid, data, msisdn, session, shortcode);
+            const response = await this.ussdService.getAirtimeCharges(customer, merchantid, amount, msisdn, session, shortcode);
 
             if (response.STATUS === '000' || response.STATUS === 'OK') {
-                const charge = response.DATA.split('|')[1] || '0';
+                const charge = this.ussdService.parseAirtimeCharges(response);
                 return `Charge: Ksh ${charge}`;
             }
         } catch (error) {
@@ -441,18 +445,23 @@ class AirtimeService extends baseFeature {
         return 'Charge: Ksh 0';
     }
 
-    clearAirtimeSession(session) {
-        this.ussdService.getSession(session).then(sessionData => {
-            delete sessionData.airtime_mode;
-            delete sessionData.airtime_method;
-            delete sessionData.airtimenetwork;
-            delete sessionData.airtimenetworkid;
-            delete sessionData.airtimemsisdn;
-            delete sessionData.airtimeamount;
-            delete sessionData.airtimebankaccount;
-            delete sessionData.beneficiaries;
-            this.ussdService.saveSession(session, sessionData);
-        });
+    async clearAirtimeSession(session) {
+        try {
+            const sessionData = await this.ussdService.getSession(session);
+            if (sessionData) {
+                delete sessionData.airtime_mode;
+                delete sessionData.airtime_method;
+                delete sessionData.airtimenetwork;
+                delete sessionData.airtimenetworkid;
+                delete sessionData.airtimemsisdn;
+                delete sessionData.airtimeamount;
+                delete sessionData.airtimebankaccount;
+                delete sessionData.airtime_beneficiaries; // Use the same key
+                await this.ussdService.saveSession(session, sessionData);
+            }
+        } catch (error) {
+            this.logger.error(`[AIRTIME] Error clearing session: ${error.message}`);
+        }
     }
 
     async handleBackToHome(customer, msisdn, session, shortcode, res) {

@@ -29,12 +29,12 @@ class USSDController {
             'fullstatement_result': { feature: 'statementService', method: 'fullstatement_result' },
 
             'beneficiary': { feature: 'beneficiaryService', method: 'beneficiary' },
-            'managewithdrawbeneficiary': { feature: 'beneficiaryService', method: 'managewithdrawbeneficiary' }, // FIXED
-            'addwithdrawbeneficiary': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiary' }, // FIXED
-            'addwithdrawbeneficiaryname': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiaryname' }, // FIXED
-            'addwithdrawbeneficiaryconfirm': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiaryconfirm' }, // FIXED
-            'viewwithdrawbeneficiaries': { feature: 'beneficiaryService', method: 'viewwithdrawbeneficiaries' }, // FIXED
-            'deletewithdrawbeneficiary': { feature: 'beneficiaryService', method: 'deletewithdrawbeneficiary' }, // FIXED
+            'managewithdrawbeneficiary': { feature: 'beneficiaryService', method: 'managewithdrawbeneficiary' },
+            'addwithdrawbeneficiary': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiary' },
+            'addwithdrawbeneficiaryname': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiaryname' },
+            'addwithdrawbeneficiaryconfirm': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiaryconfirm' },
+            'viewwithdrawbeneficiaries': { feature: 'beneficiaryService', method: 'viewwithdrawbeneficiaries' },
+            'deletewithdrawbeneficiary': { feature: 'beneficiaryService', method: 'deletewithdrawbeneficiary' },
             'deletebeneficiaryconfirm': { feature: 'beneficiaryService', method: 'deletebeneficiaryconfirm' },
 
             // Mobile Money
@@ -85,6 +85,48 @@ class USSDController {
 
 
             'fundstransfer': { feature: 'fundsTransfer', method: 'fundstransfer' },
+            'internaltransfer': { feature: 'fundsTransfer', method: 'internaltransfer' },
+            'internaltransferbankaccount': { feature: 'fundsTransfer', method: 'internaltransferbankaccount' },
+            'internaltransferamount': { feature: 'fundsTransfer', method: 'internaltransferamount' },
+            'internaltransferownaccount': { feature: 'fundsTransfer', method: 'internaltransferownaccount' },
+            'internaltransferremark': { feature: 'fundsTransfer', method: 'internaltransferremark' },
+            'internaltransfertransaction': { feature: 'fundsTransfer', method: 'internaltransfertransaction' },
+            'internaltransferotheraccount': { feature: 'fundsTransfer', method: 'internaltransferotheraccount' },
+            'internaltransferbeneficiary': { feature: 'fundsTransfer', method: 'internaltransferbeneficiary' },
+            'manageinternaltransferbeneficiary': { feature: 'fundsTransfer', method: 'manageinternaltransferbeneficiary' },
+
+            // Card Transfer Routes
+            'cardtransfer': { feature: 'fundsTransfer', method: 'cardtransfer' },
+            'cardnumber': { feature: 'fundsTransfer', method: 'cardnumber' },
+            'cardamount': { feature: 'fundsTransfer', method: 'cardamount' },
+            'cardbankaccount': { feature: 'fundsTransfer', method: 'cardbankaccount' },
+            'cardremark': { feature: 'fundsTransfer', method: 'cardremark' },
+            'cardtransaction': { feature: 'fundsTransfer', method: 'cardtransaction' },
+
+            // Bank Transfer Routes
+            'banktransfer': { feature: 'fundsTransfer', method: 'banktransfer' },
+            'bankfilter': { feature: 'fundsTransfer', method: 'bankfilter' },
+            'banklist': { feature: 'fundsTransfer', method: 'banklist' },
+            'bankbranch': { feature: 'fundsTransfer', method: 'bankbranch' },
+            'bankbranchlist': { feature: 'fundsTransfer', method: 'bankbranchlist' },
+            'banktrasferaccount': { feature: 'fundsTransfer', method: 'banktrasferaccount' },
+            'banktrasfername': { feature: 'fundsTransfer', method: 'banktrasfername' },
+            'banktrasfermount': { feature: 'fundsTransfer', method: 'banktrasfermount' },
+            'banktrasferbankaccount': { feature: 'fundsTransfer', method: 'banktrasferbankaccount' },
+            'banktrasferremark': { feature: 'fundsTransfer', method: 'banktrasferremark' },
+            'banktrasfertransaction': { feature: 'fundsTransfer', method: 'banktrasfertransaction' },
+
+            // Beneficiary Management Routes
+            'addinternaltransferbeneficiary': { feature: 'fundsTransfer', method: 'addinternaltransferbeneficiary' },
+            'addinternaltransferbeneficiaryname': { feature: 'fundsTransfer', method: 'addinternaltransferbeneficiaryname' },
+            'addinternaltransferbeneficiarytransaction': { feature: 'fundsTransfer', method: 'addinternaltransferbeneficiarytransaction' },
+            'viewinternaltransferbeneficiary': { feature: 'fundsTransfer', method: 'viewinternaltransferbeneficiary' },
+            'viewinternaltransferbeneficiarytransaction': { feature: 'fundsTransfer', method: 'viewinternaltransferbeneficiarytransaction' },
+            'deleteinternaltransferbeneficiary': { feature: 'fundsTransfer', method: 'deleteinternaltransferbeneficiary' },
+            'deleteinternaltransferbeneficiarytransaction': { feature: 'fundsTransfer', method: 'deleteinternaltransferbeneficiarytransaction' },
+
+
+
             'billpayment': { feature: 'billPayment', method: 'billpayment' },
             'paymerchant': { feature: 'merchantPayment', method: 'paymerchant' },
 
@@ -135,6 +177,11 @@ class USSDController {
             logger.error(`[USSD] No route found for menu: ${menu}`);
             return this.sendResponse(res, 'end', 'System error. Invalid menu state.');
         }
+
+        // ADD THIS DEBUG LOGGING
+        logger.info(`[ROUTING DEBUG] Routing from menu: ${menu} to ${route.feature}.${route.method}`);
+        logger.info(`[ROUTING DEBUG] Response: "${response}"`);
+        logger.info(`[ROUTING DEBUG] Session: ${session}`);
 
         try {
             return await featureManager.execute(

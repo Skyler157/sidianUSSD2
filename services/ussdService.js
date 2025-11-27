@@ -326,6 +326,404 @@ class USSDService {
         }
     }
 
+    /**
+ * Handle airtime purchase transactions
+ */
+    async handleAirtimePurchase(customer, merchantId, mobileNumber, amount, sourceAccount, pin, msisdn, session, shortcode) {
+        logger.info(`[USSD] handleAirtimePurchase() | merchant=${merchantId} | mobile=${mobileNumber} | amount=${amount} | account=${sourceAccount}`);
+
+        try {
+            const data =
+                `MERCHANTID:${merchantId}:` +
+                `BANKACCOUNTID:${sourceAccount}:` +
+                `ACCOUNTID:${mobileNumber}:` +
+                `AMOUNT:${amount}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `MOBILENUMBER:${msisdn}:` +
+                `ACTION:PAYBILL:` +
+                `TMPIN:${pin}`;
+
+            const response = await apiService.makeRequest(
+                "M-",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] AIRTIME PURCHASE Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in handleAirtimePurchase: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    /**
+     * Get airtime transaction charges
+     */
+    async getAirtimeCharges(customer, merchantId, amount, msisdn, session, shortcode) {
+        logger.info(`[USSD] getAirtimeCharges() | merchant=${merchantId} | amount=${amount}`);
+
+        try {
+            const data =
+                `FORMID:O-GetBankMerchantCharges:` +
+                `MERCHANTID:${merchantId}:` +
+                `AMOUNT:${amount}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `MOBILENUMBER:${msisdn}`;
+
+            const response = await apiService.makeRequest(
+                "O-GetBankMerchantCharges",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] AIRTIME CHARGES Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in getAirtimeCharges: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    /**
+     * Get airtime beneficiaries
+     */
+    async getAirtimeBeneficiaries(customer, merchantId, msisdn, session, shortcode) {
+        logger.info(`[USSD] getAirtimeBeneficiaries() | merchant=${merchantId} | customerid=${customer.customerid}`);
+
+        try {
+            const data =
+                `FORMID:O-GetUtilityAlias:` +
+                `SERVICETYPE:Airtime:` +
+                `SERVICEID:${merchantId}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `MOBILENUMBER:${msisdn}`;
+
+            const response = await apiService.makeRequest(
+                "O-GetUtilityAlias",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] AIRTIME BENEFICIARIES Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in getAirtimeBeneficiaries: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    /**
+     * Parse airtime beneficiaries from API response
+     */
+    parseAirtimeBeneficiaries(apiResponse) {
+        if (!apiResponse || (apiResponse.STATUS !== '000' && apiResponse.STATUS !== 'OK') || !apiResponse.DATA) {
+            return [];
+        }
+
+        try {
+            const beneficiaries = [];
+            const items = apiResponse.DATA.split(';');
+
+            for (const item of items) {
+                if (item.trim()) {
+                    const parts = item.split(',');
+                    if (parts.length >= 3) {
+                        const merchantId = parts[0].trim();
+                        const mobileNumber = parts[1].trim();
+                        const alias = parts[2].trim();
+
+                        // Only add if all fields are present and not empty
+                        if (merchantId && mobileNumber && alias) {
+                            beneficiaries.push([merchantId, mobileNumber, alias]);
+                        }
+                    }
+                }
+            }
+
+            logger.info(`[USSD] Parsed ${beneficiaries.length} beneficiaries from API response`);
+            return beneficiaries;
+        } catch (error) {
+            logger.error(`[USSD] Error parsing airtime beneficiaries: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * Parse airtime charges from API response
+     */
+    parseAirtimeCharges(apiResponse) {
+        if (!apiResponse || (apiResponse.STATUS !== '000' && apiResponse.STATUS !== 'OK') || !apiResponse.DATA) {
+            return '0';
+        }
+
+        try {
+            const parts = apiResponse.DATA.split('|');
+            // The charge is in the second part: "ChargeAmount|5.00"
+            return parts.length >= 2 ? parts[1] : '0';
+        } catch (error) {
+            logger.error(`[USSD] Error parsing airtime charges: ${error.message}`);
+            return '0';
+        }
+    }
+
+    async handleInternalTransfer(customer, sourceAccount, destinationAccount, amount, remark, pin, msisdn, session, shortcode) {
+        logger.info(`[USSD] handleInternalTransfer() | from=${sourceAccount} | to=${destinationAccount} | amount=${amount}`);
+
+        try {
+            const data =
+                `FORMID:B-:` +
+                `MERCHANTID:TRANSFER:` +
+                `BANKACCOUNTID:${sourceAccount}:` +
+                `TOACCOUNT:${destinationAccount}:` +
+                `AMOUNT:${amount}:` +
+                `MESSAGE:${remark}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `MOBILENUMBER:${msisdn}:` +
+                `TMPIN:${pin}`;
+
+            const response = await apiService.makeRequest(
+                "TRANSFER",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] INTERNAL TRANSFER Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in handleInternalTransfer: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    /**
+     * Handle card transfers (Pre-paid/Credit cards)
+     */
+    async handleCardTransfer(customer, cardType, cardNumber, amount, sourceAccount, remark, pin, msisdn, session, shortcode) {
+        logger.info(`[USSD] handleCardTransfer() | cardType=${cardType} | cardNumber=${cardNumber} | amount=${amount} | account=${sourceAccount}`);
+
+        try {
+            const data =
+                `FORMID:B-:` +
+                `MERCHANTID:PAYCARD:` +
+                `BANKACCOUNTID:${sourceAccount}:` +
+                `ACCOUNTID:${sourceAccount}:` +
+                `AMOUNT:${amount}:` +
+                `INFOFIELD1:${cardNumber}:` +
+                `INFOFIELD2:${cardType}:` +
+                `MESSAGE:${remark}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `MOBILENUMBER:${msisdn}:` +
+                `TMPIN:${pin}`;
+
+            const response = await apiService.makeRequest(
+                "PAYCARD",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] CARD TRANSFER Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in handleCardTransfer: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    /**
+     * Handle external bank transfers (EFT/RTGS)
+     */
+    async handleBankTransfer(customer, transferType, bankCode, branchCode, accountNumber, accountName, amount, sourceAccount, remark, pin, msisdn, session, shortcode) {
+        logger.info(`[USSD] handleBankTransfer() | type=${transferType} | bank=${bankCode} | branch=${branchCode} | account=${accountNumber} | amount=${amount}`);
+
+        try {
+            const data =
+                `FORMID:B-:` +
+                `MERCHANTID:${transferType}:` +
+                `BANKACCOUNTID:${sourceAccount}:` +
+                `TOACCOUNT:${accountNumber}:` +
+                `AMOUNT:${amount}:` +
+                `INFOFIELD1:${accountName}:` +
+                `INFOFIELD2:${bankCode}:` +
+                `INFOFIELD3:${branchCode}:` +
+                `MESSAGE:${remark}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `MOBILENUMBER:${msisdn}:` +
+                `TMPIN:${pin}`;
+
+            const response = await apiService.makeRequest(
+                transferType,
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] BANK TRANSFER Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in handleBankTransfer: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    /**
+     * Get list of banks or branches for external transfers
+     */
+    async getBankList(customer, filter, msisdn, session, shortcode) {
+        logger.info(`[USSD] getBankList() | filter=${filter}`);
+
+        try {
+            const data = `FILTER:${filter}`;
+
+            const response = await apiService.makeRequest(
+                "GetCommercialBankWithFilter",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] BANK LIST Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in getBankList: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    /**
+     * Get list of branches for a specific bank
+     */
+    async getBranchList(customer, bankCode, filter, msisdn, session, shortcode) {
+        logger.info(`[USSD] getBranchList() | bank=${bankCode} | filter=${filter}`);
+
+        try {
+            const data = `BANKCODE:${bankCode}:FILTER:${filter}`;
+
+            const response = await apiService.makeRequest(
+                "GetCommercialBankBranchWithFilter",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] BRANCH LIST Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in getBranchList: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    /**
+     * Manage internal transfer beneficiaries
+     */
+    async getInternalTransferBeneficiaries(customer, msisdn, session, shortcode) {
+        logger.info(`[USSD] getInternalTransferBeneficiaries() | customerid=${customer.customerid}`);
+
+        try {
+            const data =
+                `FORMID:O-GETTRANSFERBENEFICIARY:` +
+                `BENFTYPE:INTERNAL:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `MOBILENUMBER:${msisdn}`;
+
+            const response = await apiService.makeRequest(
+                "O-GETTRANSFERBENEFICIARY",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] GET BENEFICIARIES Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in getInternalTransferBeneficiaries: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    async addInternalTransferBeneficiary(customer, accountNumber, alias, msisdn, session, shortcode) {
+        logger.info(`[USSD] addInternalTransferBeneficiary() | account=${accountNumber} | alias=${alias}`);
+
+        try {
+            const data =
+                `FORMID:O-ADDTRANSFERBENEFICIARY:` +
+                `MERCHANTID:TRANSFER:` +
+                `BENFTYPE:INTERNAL:` +
+                `BENFACCOUNTID:${accountNumber}:` +
+                `BENFALIAS:${alias}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `MOBILENUMBER:${msisdn}`;
+
+            const response = await apiService.makeRequest(
+                "O-ADDTRANSFERBENEFICIARY",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] ADD BENEFICIARY Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in addInternalTransferBeneficiary: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
+    async deleteInternalTransferBeneficiary(customer, accountNumber, alias, msisdn, session, shortcode) {
+        logger.info(`[USSD] deleteInternalTransferBeneficiary() | account=${accountNumber} | alias=${alias}`);
+
+        try {
+            const data =
+                `FORMID:O-DeleteTransferBeneficiary:` +
+                `BENFTYPE:INTERNAL:` +
+                `BENFACCOUNTID:${accountNumber}:` +
+                `BENFALIAS:${alias}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `MOBILENUMBER:${msisdn}`;
+
+            const response = await apiService.makeRequest(
+                "O-DeleteTransferBeneficiary",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[USSD] DELETE BENEFICIARY Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[USSD] Error in deleteInternalTransferBeneficiary: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
+
     async handleTermDeposit(customer, depositType, tenure, amount, accountNumber, msisdn, session, shortcode) {
         logger.info(`[USSD] handleTermDeposit() | type=${depositType} | tenure=${tenure} | amount=${amount} | account=${accountNumber}`);
 

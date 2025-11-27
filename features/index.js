@@ -21,7 +21,7 @@ class FeatureManager {
                 'buygoods': require('./buygoods'),
                 'paybill': require('./paybill'),
                 'airtime': require('./airtime'),
-                'fundsTransfer': require('./fundstransfer'),
+                'fundsTransfer': require('./fundsTransfer'),
                 'billPayment': require('./billPayment'),
                 'merchantPayment': require('./merchantPayment'),
                 'termDeposits': require('./termDeposits'),
