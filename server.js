@@ -75,7 +75,7 @@ setTimeout(async () => {
     console.log('Testing Redis connection...');
     try {
         if (await redisService.testConnection()) {
-            console.log('Redis is ready for USSD sessions');
+            console.log('Redis is ready');
         }
     } catch (error) {
         console.error('Redis test failed:', error.message);

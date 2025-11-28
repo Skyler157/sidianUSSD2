@@ -7,13 +7,13 @@ const logsDir = path.join(__dirname, '../logs');
 try {
     if (!fs.existsSync(logsDir)) {
         fs.mkdirSync(logsDir, { recursive: true });
-        console.log('✅ Created logs directory:', logsDir);
+        console.log('Created logs directory:', logsDir);
     }
 } catch (error) {
-    console.error('❌ Failed to create logs directory:', error.message);
+    console.error('Failed to create logs directory:', error.message);
 }
 
-// Custom format for errors with stack traces
+
 const errorFormat = winston.format((info) => {
     if (info instanceof Error) {
         return Object.assign({}, info, {
@@ -33,7 +33,6 @@ const logger = winston.createLogger({
         }),
         winston.format.errors({ stack: true }),
         winston.format.printf(({ timestamp, level, message, stack }) => {
-            // Handle both string messages and object messages
             let logMessage = message;
             if (typeof message === 'object') {
                 try {
@@ -42,8 +41,7 @@ const logger = winston.createLogger({
                     logMessage = String(message);
                 }
             }
-            
-            // Include stack trace for errors, but keep main log clean
+
             if (stack && level === 'error') {
                 return `${timestamp} - ${level.toUpperCase()}: ${logMessage}\n${stack}`;
             }
@@ -52,7 +50,7 @@ const logger = winston.createLogger({
     ),
     transports: [
         // File transport for all logs
-        new winston.transports.File({ 
+        new winston.transports.File({
             filename: path.join(logsDir, 'ussd.log'),
             maxsize: 10485760, // 10MB
             maxFiles: 5,
@@ -64,7 +62,6 @@ const logger = winston.createLogger({
             maxsize: 5242880, // 5MB
             maxFiles: 3,
         }),
-        // Console transport with colors
         new winston.transports.Console({
             format: winston.format.combine(
                 winston.format.colorize(),
@@ -87,21 +84,18 @@ const logger = winston.createLogger({
     ],
     // Handle exceptions and rejections
     exceptionHandlers: [
-        new winston.transports.File({ 
-            filename: path.join(logsDir, 'exceptions.log') 
+        new winston.transports.File({
+            filename: path.join(logsDir, 'exceptions.log')
         }),
         new winston.transports.Console()
     ],
     rejectionHandlers: [
-        new winston.transports.File({ 
-            filename: path.join(logsDir, 'rejections.log') 
+        new winston.transports.File({
+            filename: path.join(logsDir, 'rejections.log')
         }),
         new winston.transports.Console()
     ]
 });
 
-// Test logger on startup
-logger.info('Logger initialized successfully');
-logger.info(`Log files directory: ${logsDir}`);
 
 module.exports = logger;

@@ -9,14 +9,25 @@ class baseFeature {
     }
 
     sendResponse(res, type, message) {
-        const messageSize = Buffer.byteLength(message, 'utf8');
-        const featureName = this.constructor.name.replace('Feature', '').replace('Service', '');
+    const messageSize = Buffer.byteLength(message, 'utf8');
+    const featureName = this.constructor.name.replace('Feature', '').replace('Service', '');
+    
+    // Clean logging - don't show full menu content
+    if (message && message.includes('\n')) {
+        // It's a menu - log summary instead of full content
+        const firstLine = message.split('\n')[0];
+        const optionCount = (message.match(/\n\d\./g) || []).length;
+        logger.info(`[${featureName.toUpperCase()}] ${type.toUpperCase()}: ${firstLine} [${optionCount} options]`);
+    } else {
+        // Regular message
         logger.info(`[${featureName.toUpperCase()}] ${type.toUpperCase()}: ${message}`);
-        logger.info(`[${featureName.toUpperCase()}] Message size: ${messageSize} bytes`);
-
-        res.set('Content-Type', 'text/plain');
-        return res.send(message);
     }
+    
+    logger.info(`[${featureName.toUpperCase()}] Message size: ${messageSize} bytes`);
+
+    res.set('Content-Type', 'text/plain');
+    return res.send(message);
+}
 
     displayMenu(menuKey, res, prefix = '') {
         const menu = this.menus[menuKey];
@@ -93,15 +104,11 @@ class baseFeature {
             return null;
         }
 
-        this.logger.info(`[SESSION DEBUG] BEFORE UPDATE - Current menu: ${sessionData.current_menu}, Previous menu: ${sessionData.previous_menu}`);
-
         sessionData.current_menu = currentMenu;
         sessionData.previous_menu = previousMenu;
         await this.ussdService.saveSession(session, sessionData);
 
         const verifySession = await this.ussdService.getSession(session);
-        this.logger.info(`[SESSION DEBUG] AFTER UPDATE - Current menu: ${verifySession.current_menu}, Previous menu: ${verifySession.previous_menu}`);
-
         this.logger.info(`[SESSION] Updated menu: ${previousMenu} -> ${currentMenu}`);
         return sessionData;
     }

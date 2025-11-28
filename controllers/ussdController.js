@@ -179,6 +179,13 @@ class USSDController {
         try {
             await this.handleSessionLogging(sessionId, msisdn, response);
 
+            if (response === '00') {
+                logger.info(`[USSD] Immediate exit handling for session: ${sessionId}`);
+                await ussdService.logSessionEnd(sessionId, msisdn, 'user_end');
+                await ussdService.deleteSession(sessionId);
+                return this.sendResponse(res, 'end', 'Thank you for using Sidian Bank USSD service.');
+            }
+
             const sessionData = await ussdService.getSession(sessionId);
 
             if (!sessionData) {
@@ -191,11 +198,12 @@ class USSDController {
             return await this.routeToFeature(currentMenu, customer, msisdn, sessionId, shortcode, response, res);
         } catch (error) {
             logger.error(`[USSD] Handler Error: ${error.message}`);
-            // Log session end on error
-            await ussdService.logSessionTime(sessionId);
+            // Use the new logSessionEnd method for errors
+            await ussdService.logSessionEnd(sessionId, msisdn, 'error');
             return this.sendResponse(res, 'end', 'System error. Please try again later.');
         }
     }
+
 
     // SESSION LOGGING 
     async handleSessionLogging(sessionId, msisdn, userInput) {
@@ -214,19 +222,11 @@ class USSDController {
                 }
 
                 await ussdService.logSessionStart(sessionId, msisdn);
-                logger.info(`[SESSION] New session started: ${sessionId}`);
             } else {
                 // Log progress for existing session
                 await ussdService.logSessionProgress(sessionId);
             }
 
-            // If user is exiting 00, log session end
-            if (userInput === '00') {
-                await ussdService.logSessionTime(sessionId);
-                await ussdService.deleteSession(sessionId);
-                await ussdService.redisService.del(`ussd_session_start:${sessionId}`);
-                logger.info(`[SESSION] User initiated session end: ${sessionId}`);
-            }
 
         } catch (error) {
             logger.error(`[SESSION] Logging error: ${error.message}`);
@@ -234,14 +234,15 @@ class USSDController {
     }
 
     // HANDLE SESSION TIMEOUTS 
-    async handleSessionTimeout(sessionId) {
+    async handleSessionTimeout(sessionId, msisdn) {
         try {
-            await ussdService.logSessionTime(sessionId);
+            await ussdService.logSessionEnd(sessionId, msisdn, 'timeout');
             await ussdService.deleteSession(sessionId);
             logger.info(`[SESSION] Session timeout: ${sessionId}`);
         } catch (error) {
             logger.error(`[SESSION] Timeout handling error: ${error.message}`);
         }
+
     }
 
     async validateSessionFreshness(sessionId, msisdn) {
@@ -256,7 +257,7 @@ class USSDController {
 
                 if (isExpired) {
                     logger.warn(`[SESSION] Expired session reused: ${sessionId}, elapsed: ${elapsed}ms`);
-                    await this.cleanupSession(sessionId);
+                    await this.cleanupSession(sessionId, msisdn);
                     return false;
                 }
             }
@@ -268,8 +269,9 @@ class USSDController {
         }
     }
 
-    async cleanupSession(sessionId) {
+    async cleanupSession(sessionId, msisdn) {
         try {
+            await ussdService.logSessionEnd(sessionId, msisdn, 'cleanup');
             await ussdService.deleteSession(sessionId);
             await ussdService.redisService.del(`ussd_session_start:${sessionId}`);
             logger.info(`[SESSION] Cleaned up session: ${sessionId}`);
@@ -313,24 +315,34 @@ class USSDController {
     }
 
     sendResponse(res, type, message) {
-        const messageSize = Buffer.byteLength(message, 'utf8');
+    const messageSize = Buffer.byteLength(message, 'utf8');
+    
+    // Clean logging - don't show full menu content
+    if (message && message.includes('\n')) {
+        // It's a menu - log summary instead of full content
+        const firstLine = message.split('\n')[0];
+        const optionCount = (message.match(/\n\d\./g) || []).length;
+        logger.info(`[USSD] ${type.toUpperCase()}: ${firstLine} [${optionCount} options]`);
+    } else {
+        // Regular message
         logger.info(`[USSD] ${type.toUpperCase()}: ${message}`);
-        logger.info(`[USSD] Message size: ${messageSize} bytes`);
-
-        if (type === 'end') {
-            logger.info(`[SESSION] End response sent to user`);
-        }
-
-        res.set('Content-Type', 'text/plain');
-        return res.send(message);
     }
+    
+    logger.info(`[USSD] Message size: ${messageSize} bytes`);
+
+    if (type === 'end') {
+        logger.info(`[SESSION] End response sent to user`);
+    }
+
+    res.set('Content-Type', 'text/plain');
+    return res.send(message);
+}
 
     // SHOWS SESSION INFO 
     async getSessionInfo(req, res) {
         const { sessionId } = req.params;
         try {
             const sessionData = await ussdService.getSession(sessionId);
-            // FIX: Access redisService correctly
             const sessionStart = await ussdService.redisService.get(`ussd_session_start:${sessionId}`);
 
             const info = {

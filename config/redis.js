@@ -3,90 +3,104 @@ const logger = require('../services/logger');
 
 class RedisService {
     constructor() {
-        this.client = redis.createClient({
-            socket: {
-                host: process.env.REDIS_HOST || '172.17.40.25',
-                port: 6380,
-                connectTimeout: parseInt(process.env.REDIS_CONNECT_TIMEOUT) || 15000
+        // Start with one node, cluster will discover others
+        this.client = redis.createCluster({
+            rootNodes: [
+                {
+                    socket: {
+                        host: process.env.REDIS_HOST || '172.17.40.25',
+                        port: parseInt(process.env.REDIS_PORT) || 6380
+                    }
+                }
+            ],
+            defaults: {
+                socket: {
+                    connectTimeout: parseInt(process.env.REDIS_CONNECT_TIMEOUT) || 15000
+                },
+                password: process.env.REDIS_PASSWORD || 'bitnami123'
             },
-            password: process.env.REDIS_PASSWORD || 'bitnami123'
+            useReplicas: true 
         });
 
         this.isReady = false;
-        this.attachEvents();
-        this.client.connect().catch(err => logger.error('Redis connect error:', err.message));
-    }
-
-    attachEvents() {
+        
         this.client.on('ready', () => {
             this.isReady = true;
-            logger.info('Redis ready');
+            logger.info('Redis Cluster ready');
         });
 
-        this.client.on('error', err => {
+        this.client.on('error', (err) => {
             this.isReady = false;
-            logger.error('Redis error:', err.message);
+            logger.error('Redis Cluster error:', err);
         });
 
-        this.client.on('end', () => {
-            this.isReady = false;
-            logger.warn('Redis connection closed');
+        this.client.on('nodeAdded', () => {
+            logger.info('Redis node added to cluster');
+        });
+
+        // Connect immediately
+        this.client.connect().catch(err => {
+            logger.error('Redis Cluster connection failed:', err);
         });
     }
 
-    async exec(command, ...args) {
-        if (!this.isReady) throw new Error('Redis not ready');
-
+    async set(key, value, ttlSeconds = null) {
         try {
-            return await this.client[command](...args);
+            if (ttlSeconds) {
+                return await this.client.set(key, value, { EX: ttlSeconds });
+            }
+            return await this.client.set(key, value);
         } catch (err) {
-            logger.error(`Redis ${command.toUpperCase()} error:`, err.message);
+            logger.error('Redis SET error:', err);
             throw err;
         }
     }
 
-    set(key, value, ttlSeconds = null) {
-        return ttlSeconds
-            ? this.exec('set', key, value, { EX: ttlSeconds })
-            : this.exec('set', key, value);
+    async get(key) {
+        try {
+            return await this.client.get(key);
+        } catch (err) {
+            logger.error('Redis GET error:', err);
+            throw err;
+        }
     }
 
-    get(key) {
-        return this.exec('get', key);
+    async del(key) {
+        try {
+            return await this.client.del(key);
+        } catch (err) {
+            logger.error('Redis DEL error:', err);
+            throw err;
+        }
     }
 
-    del(key) {
-        return this.exec('del', key);
-    }
-
-    exists(key) {
-        return this.exec('exists', key);
-    }
-
-    // Health check
     async healthCheck() {
-        return this.isReady
-            ? { status: 'healthy', message: 'Redis is ready' }
-            : { status: 'error', message: 'Redis not ready' };
+        try {
+            await this.client.set('health_check', 'test', { EX: 1 });
+            return { status: 'healthy', message: 'Redis Cluster is ready' };
+        } catch (err) {
+            return { status: 'error', message: err.message };
+        }
     }
 
-    // Test Redis
     async testConnection() {
         try {
-            const testKey = 'redis_test';
-            const testValue = 'v_' + Date.now();
+            const testKey = 'redis_test_' + Math.random().toString(36).substring(7);
+            const testValue = 'test_value';
 
             await this.set(testKey, testValue, 5);
-            const value = await this.get(testKey);
+            const retrieved = await this.get(testKey);
+            await this.del(testKey);
 
-            if (value === testValue) {
-                logger.info('Redis test PASSED');
-                return true;
+            const success = retrieved === testValue;
+            if (success) {
+                logger.info('Redis Cluster test PASSED');
+            } else {
+                logger.error('Redis Cluster test FAILED - value mismatch');
             }
-
-            return false;
+            return success;
         } catch (err) {
-            logger.error('Redis connection test failed:', err.message);
+            logger.error('Redis Cluster connection test failed:', err);
             return false;
         }
     }
@@ -94,9 +108,9 @@ class RedisService {
     async disconnect() {
         try {
             await this.client.quit();
-            logger.info('Redis disconnected');
+            logger.info('Redis Cluster disconnected');
         } catch (err) {
-            logger.error('Redis disconnect error:', err.message);
+            logger.error('Redis Cluster disconnect error:', err);
         }
     }
 }

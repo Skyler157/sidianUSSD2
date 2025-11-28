@@ -157,7 +157,6 @@ class AirtimeService extends baseFeature {
                 await this.updateSessionMenu(session, 'airtimebeneficiary', 'airtimenetwork');
 
                 sessionData = await this.ussdService.getSession(session);
-                this.logger.info(`[AIRTIME DEBUG] Menu after update: ${sessionData.current_menu}`);
 
                 const fetchedBeneficiaries = await this.getAirtimeBeneficiaries(customer, msisdn, session, shortcode, sessionData.airtimenetworkid);
 

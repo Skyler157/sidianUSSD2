@@ -4,15 +4,16 @@ class BeneficiaryService extends baseFeature {
     constructor() {
         super();
     }
+    
 
     async beneficiary(customer, msisdn, session, shortcode, response, res) {
         if (!response) {
             await this.updateSessionMenu(session, 'beneficiary', 'myaccount');
-            return this.displayMenu('beneficiary', res); 
+            return this.displayMenu('beneficiary', res);
         }
 
         const menuHandlers = {
-            '1': () => this.managewithdrawbeneficiary(customer, msisdn, session, shortcode, null, res) 
+            '1': () => this.managewithdrawbeneficiary(customer, msisdn, session, shortcode, null, res)
         };
 
         return await this.handleMenuFlow('beneficiary', response, menuHandlers,
@@ -119,6 +120,65 @@ class BeneficiaryService extends baseFeature {
         return await this.addwithdrawbeneficiaryconfirm(customer, msisdn, session, shortcode, null, res);
     }
 
+    async addwithdrawbeneficiaryconfirm(customer, msisdn, session, shortcode, response, res) {
+        const sessionData = await this.ussdService.getSession(session);
+
+        if (!response) {
+            await this.updateSessionMenu(session, 'addwithdrawbeneficiaryconfirm', 'addwithdrawbeneficiaryname');
+
+            const beneficiaryName = sessionData.beneficiaryName || '';
+            const beneficiaryMobile = sessionData.beneficiaryMobile || '';
+            const displayMobile = this.formatDisplayMobile(beneficiaryMobile);
+
+            const message = `Confirm adding beneficiary:\n\nName: ${beneficiaryName}\nMobile: ${displayMobile}\n\n1. Confirm\n2. Cancel\n\n0. Back\n00. Exit`;
+            return this.sendResponse(res, 'con', message);
+        }
+
+        if (response === '0') {
+            return await this.handleBack(sessionData, 'beneficiaryService', 'addwithdrawbeneficiaryname',
+                msisdn, session, shortcode, res);
+        }
+
+        if (response === '00') {
+            return await this.handleExit(session, res);
+        }
+
+        if (response === '2') {
+            // User cancelled - go back to manage beneficiaries
+            return await this.handleBack(sessionData, 'beneficiaryService', 'managewithdrawbeneficiary',
+                msisdn, session, shortcode, res);
+        }
+
+        if (response !== '1') {
+            return this.sendResponse(res, 'con', 'Invalid selection. Please try again:\n\n1. Confirm\n2. Cancel');
+        }
+
+        try {
+            // Call API to add beneficiary
+            const result = await this.ussdService.addInternalTransferBeneficiary(
+                customer,
+                sessionData.beneficiaryMobile,
+                sessionData.beneficiaryName,
+                msisdn, session, shortcode
+            );
+
+            // Clean up session data
+            delete sessionData.beneficiaryMobile;
+            delete sessionData.beneficiaryName;
+            await this.ussdService.saveSession(session, sessionData);
+
+            if (result.STATUS === '000' || result.STATUS === 'OK') {
+                const successMessage = result.DATA || 'Beneficiary added successfully';
+                return this.sendResponse(res, 'con', `${successMessage}\n\n0. Back\n00. Exit`);
+            } else {
+                const errorMessage = result.DATA || 'Failed to add beneficiary. Please try again.';
+                return this.sendResponse(res, 'con', `${errorMessage}\n\n0. Back\n00. Exit`);
+            }
+        } catch (error) {
+            this.logger.error(`[BENEFICIARY] Add beneficiary error: ${error.message}`);
+            return this.sendResponse(res, 'end', 'Service temporarily unavailable. Please try again later.');
+        }
+    }
     async viewwithdrawbeneficiaries(customer, msisdn, session, shortcode, response, res) {
         const sessionData = await this.ussdService.getSession(session);
 

@@ -20,6 +20,10 @@ class USSDService {
         }, 2000);
     }
 
+    get redisService() {
+        return redisService;
+    }
+
     // Use uuid package for unique IDs
     generateUniqueId() {
         return uuidv4();
@@ -91,35 +95,16 @@ class USSDService {
         const startTime = new Date(now).toLocaleString('en-GB', options);
         const endTime = new Date(now + (this.sessionTimeout * 1000)).toLocaleString('en-GB', options);
 
+        // ADD START MARKERS AT THE BEGINNING
         logger.info('---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
-        logger.info('                                                                             START');
+        logger.info('                                                                              START');
         logger.info(`SESSION STARTED @ ${startTime}`);
         logger.info(`SESSION ENDS @ ${endTime}`);
         logger.info(`MSISDN: ${msisdn}`);
         logger.info(`SESSION ID: ${sessionId}`);
+        logger.info(`[SESSION] New session started: ${sessionId}`);
     }
 
-    get redisService() {
-        return redisService;
-    }
-    async logSessionTime(sessionId) {
-        try {
-            const startTimestampStr = await redisService.get(`ussd_session_start:${sessionId}`);
-            const startTimestamp = startTimestampStr ? parseInt(startTimestampStr) : null;
-            const elapsedSeconds = startTimestamp ? Math.floor((Date.now() - startTimestamp) / 1000) : 0;
-
-            // ADD CLEAR END MARKERS:
-            logger.info(`SESSION TIME ELAPSED: ${elapsedSeconds} seconds`);
-            logger.info('                                                                              END');
-            logger.info('---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
-        } catch (err) {
-            logger.error('Failed to log session time:', err);
-        }
-    }
-    async logSessionState(sessionId, action, menu) {
-        const session = await this.getSession(sessionId);
-        logger.info(`[SESSION STATE] ${action} - Menu: ${menu}, Data: ${JSON.stringify(session)}`);
-    }
     async logSessionProgress(sessionId) {
         try {
             const startTimestampStr = await redisService.get(`ussd_session_start:${sessionId}`);
@@ -130,6 +115,29 @@ class USSDService {
         } catch (err) {
             logger.error('Failed to log session progress:', err);
         }
+    }
+
+    async logSessionEnd(sessionId, msisdn, reason = 'user_end') {
+        try {
+            const startTimestampStr = await redisService.get(`ussd_session_start:${sessionId}`);
+            const startTimestamp = startTimestampStr ? parseInt(startTimestampStr) : null;
+            const elapsedSeconds = startTimestamp ? Math.floor((Date.now() - startTimestamp) / 1000) : 0;
+
+            // ADD END MARKERS AT THE END
+            logger.info(`SESSION TIME ELAPSED: ${elapsedSeconds} seconds`);
+            logger.info('                                                                               END');
+            logger.info('---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
+
+            // Cleanup
+            await this.deleteSession(sessionId);
+            await redisService.del(`ussd_session_start:${sessionId}`);
+        } catch (err) {
+            logger.error('Failed to log session end:', err);
+        }
+    }
+    async logSessionState(sessionId, action, menu) {
+        const session = await this.getSession(sessionId);
+        logger.info(`[SESSION STATE] ${action} - Menu: ${menu}, Data: ${JSON.stringify(session)}`);
     }
     async validateSession(sessionId) {
         try {
@@ -240,6 +248,7 @@ class USSDService {
             return null;
         }
     }
+
     async handleBalanceCheck(customer, accountNumber, msisdn, session, shortcode) {
         logger.info(`[USSD] handleBalanceCheck() | account=${accountNumber} | customerid=${customer.customerid}`);
 
@@ -387,6 +396,93 @@ class USSDService {
             return { STATUS: '999', DATA: 'Service temporarily unavailable' };
         }
     }
+    
+
+    async addInternalTransferBeneficiary(customer, mobileNumber, alias, msisdn, session, shortcode) {
+    logger.info(`[USSD] addInternalTransferBeneficiary() | mobile=${mobileNumber} | alias=${alias}`);
+
+    try {
+        // ONLY include the specific data needed - apiService will add the common parameters
+        const data = 
+            `SERVICETYPE:M-PESA:` +
+            `SERVICEID:MPESA:` +
+            `ACCOUNTID:${mobileNumber}:` +
+            `ALIAS:${alias}:` +
+            `CUSTOMERID:${customer.customerid}`;
+
+        logger.info(`[USSD] ADD BENEFICIARY Data: ${data}`);
+
+        const response = await apiService.makeRequest(
+            "O-AddUtilityAlias",
+            data,
+            msisdn,
+            session,
+            shortcode
+        );
+
+        logger.info(`[USSD] ADD BENEFICIARY Response: ${JSON.stringify(response)}`);
+        return response;
+
+    } catch (error) {
+        logger.error(`[USSD] Error in addInternalTransferBeneficiary: ${error.message}`);
+        return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+    }
+}
+
+    async getInternalTransferBeneficiaries(customer, msisdn, session, shortcode) {
+    logger.info(`[USSD] getInternalTransferBeneficiaries() | customerid=${customer.customerid}`);
+
+    try {
+        const data = 
+            `SERVICETYPE:M-PESA:` +
+            `SERVICEID:MPESA:` +
+            `CUSTOMERID:${customer.customerid}`;
+
+        const response = await apiService.makeRequest(
+            "O-GetUtilityAlias",
+            data,
+            msisdn,
+            session,
+            shortcode
+        );
+
+        logger.info(`[USSD] GET BENEFICIARIES Response: ${JSON.stringify(response)}`);
+        return response;
+
+    } catch (error) {
+        logger.error(`[USSD] Error in getInternalTransferBeneficiaries: ${error.message}`);
+        return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+    }
+}
+
+    async deleteInternalTransferBeneficiary(customer, mobileNumber, alias, msisdn, session, shortcode) {
+    logger.info(`[USSD] deleteInternalTransferBeneficiary() | mobile=${mobileNumber} | alias=${alias}`);
+
+    try {
+        const data = 
+            `SERVICETYPE:M-PESA:` +
+            `SERVICEID:MPESA:` +
+            `ACCOUNTID:${mobileNumber}:` +
+            `ALIAS:${alias}:` +
+            `CUSTOMERID:${customer.customerid}`;
+
+        const response = await apiService.makeRequest(
+            "O-DeleteUtilityAlias",
+            data,
+            msisdn,
+            session,
+            shortcode
+        );
+
+        logger.info(`[USSD] DELETE BENEFICIARY Response: ${JSON.stringify(response)}`);
+        return response;
+
+    } catch (error) {
+        logger.error(`[USSD] Error in deleteInternalTransferBeneficiary: ${error.message}`);
+        return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+    }
+}
+
 
     // Handle airtime purchase transactions
     async handleAirtimePurchase(customer, merchantId, mobileNumber, amount, sourceAccount, pin, msisdn, session, shortcode) {
