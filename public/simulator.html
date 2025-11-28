@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enhanced USSD Simulator</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #e5e7eb;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .container {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    .side-panel {
+      width: 260px;
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .side-panel h3 {
+      margin-top: 0;
+      font-size: 18px;
+      font-weight: bold;
+      color: #222;
+    }
+
+    .side-panel label {
+      display: block;
+      margin-top: 15px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .side-panel input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+
+    .phone {
+      width: 320px;
+      height: 600px;
+      background: #111;
+      border-radius: 40px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 6px solid #222;
+    }
+
+    .screen {
+      flex: 1;
+      background: #fff;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .screen-header {
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      color: #222;
+      margin-bottom: 10px;
+    }
+
+    .screen-output {
+      flex: 1;
+      background: #f9fafb;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+      overflow-y: auto;
+      font-size: 14px;
+      color: #333;
+      white-space: pre-line;
+    }
+
+    .screen-input {
+      display: flex;
+      gap: 10px;
+    }
+
+    .screen-input input {
+      flex: 1;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .screen-input button {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 12px 18px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: 0.2s;
+    }
+
+    .screen-input button:hover {
+      background: #1e40af;
+    }
+
+    .footer {
+      background: #111;
+      height: 60px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #aaa;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <div class="side-panel">
+    <h3>USSD Settings</h3>
+
+    <label>Phone Number</label>
+    <input id="phoneInput" placeholder="e.g. 254712345678" />
+
+    <label>Session ID</label>
+    <input id="sessionInput" placeholder="Auto-generated if empty" />
+
+    <label>Endpoint URL</label>
+    <input id="urlInput" placeholder="e.g. http://172.17.50.13:5000/sidianussd" />
+  </div>
+
+  <div class="phone">
+    <div class="screen">
+      <div class="screen-header">USSD Simulator</div>
+      <div id="output" class="screen-output">Enter phone & start session</div>
+      <div class="screen-input">
+        <input id="input" type="text" placeholder="Type here..." />
+        <button onclick="sendInput()">Send</button>
+      </div>
+    </div>
+    <div class="footer">SIMULATOR</div>
+  </div>
+
+</div>
+
+<script>
+  let sessionId = null;
+  let started = false;
+
+  function generateSessionId() {
+    return 'sess-' + Math.floor(Math.random() * 10000000);
+  }
+
+  async function sendInput() {
+    const output = document.getElementById('output');
+    const inputEl = document.getElementById('input');
+
+    const phone = document.getElementById('phoneInput').value.trim();
+    let session = document.getElementById('sessionInput').value.trim();
+    const url = document.getElementById('urlInput').value.trim();
+
+    if (!phone || !url) {
+      output.textContent = 'Enter phone number and endpoint first!';
+      return;
+    }
+
+    if (!session) {
+      session = generateSessionId();
+      document.getElementById('sessionInput').value = session;
+    }
+
+    sessionId = session;
+
+    let textToSend = inputEl.value;
+    if (!started) {
+      textToSend = '';
+      started = true;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sessionId,
+          msisdn: phone,
+          shortcode: '527',
+          response: textToSend
+        })
+      });
+
+      const text = await response.text();
+      const cleanText = text.replace(/^CON\s+/i, '').replace(/^END\s+/i, '');
+
+      output.textContent = cleanText;
+      output.scrollTop = output.scrollHeight;
+      inputEl.value = '';
+
+    } catch (err) {
+      output.textContent = 'Error contacting backend.';
+      console.error(err);
+    }
+  }
+
+  document.getElementById('input').addEventListener('keypress', e => {
+    if (e.key === 'Enter') sendInput();
+  });
+</script>
+
+</body>
+</html>

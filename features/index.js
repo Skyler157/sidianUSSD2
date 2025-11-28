@@ -32,7 +32,6 @@ class FeatureManager {
                 this.features.set(name, feature);
             });
 
-            logger.info(`[FEATURES] Loaded ${this.features.size} features successfully`);
         } catch (error) {
             logger.error(`[FEATURES] Loading error: ${error.message}`);
         }

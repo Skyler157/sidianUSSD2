@@ -1,4 +1,4 @@
-const redisService = require('../config/redis').client;
+const redisService = require('../config/redis');
 const apiService = require('./apiService');
 const logger = require('./logger');
 const { v4: uuidv4 } = require('uuid');
@@ -7,6 +7,17 @@ class USSDService {
     constructor() {
         this.sessionTimeout = 300; // 5 minutes
         this.menus = require('../config/menus.json');
+
+        this.testRedisConnection();
+    }
+
+    async testRedisConnection() {
+        setTimeout(async () => {
+            const health = await redisService.healthCheck();
+            logger.info(`Redis Health Check: ${JSON.stringify(health)}`);
+
+            await redisService.testConnection();
+        }, 2000);
     }
 
     // Use uuid package for unique IDs
@@ -32,7 +43,6 @@ class USSDService {
             return await redisService.set(
                 `ussd_session:${sessionId}`,
                 JSON.stringify(data),
-                'EX',
                 this.sessionTimeout
             );
         } catch (error) {
@@ -63,7 +73,7 @@ class USSDService {
     async logSessionStart(sessionId, msisdn) {
         const now = Date.now();
         try {
-            await redisService.set(`ussd_session_start:${sessionId}`, now);
+            await redisService.set(`ussd_session_start:${sessionId}`, now.toString());
         } catch (err) {
             logger.error('Failed to save session start time:', err);
         }
@@ -79,26 +89,63 @@ class USSDService {
             second: '2-digit'
         };
         const startTime = new Date(now).toLocaleString('en-GB', options);
+        const endTime = new Date(now + (this.sessionTimeout * 1000)).toLocaleString('en-GB', options);
 
         logger.info('---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
-        logger.info('START SESSION');
+        logger.info('                                                                             START');
+        logger.info(`SESSION STARTED @ ${startTime}`);
+        logger.info(`SESSION ENDS @ ${endTime}`);
         logger.info(`MSISDN: ${msisdn}`);
         logger.info(`SESSION ID: ${sessionId}`);
-        logger.info(`SESSION STARTED @ ${startTime}`);
     }
 
+    get redisService() {
+        return redisService;
+    }
     async logSessionTime(sessionId) {
         try {
             const startTimestampStr = await redisService.get(`ussd_session_start:${sessionId}`);
             const startTimestamp = startTimestampStr ? parseInt(startTimestampStr) : null;
             const elapsedSeconds = startTimestamp ? Math.floor((Date.now() - startTimestamp) / 1000) : 0;
 
-            logger.info(`SESSION ELAPSED TIME: ${elapsedSeconds} seconds`);
-            logger.info('END SESSION');
+            // ADD CLEAR END MARKERS:
+            logger.info(`SESSION TIME ELAPSED: ${elapsedSeconds} seconds`);
+            logger.info('                                                                              END');
             logger.info('---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
         } catch (err) {
             logger.error('Failed to log session time:', err);
         }
+    }
+    async logSessionState(sessionId, action, menu) {
+        const session = await this.getSession(sessionId);
+        logger.info(`[SESSION STATE] ${action} - Menu: ${menu}, Data: ${JSON.stringify(session)}`);
+    }
+    async logSessionProgress(sessionId) {
+        try {
+            const startTimestampStr = await redisService.get(`ussd_session_start:${sessionId}`);
+            const startTimestamp = startTimestampStr ? parseInt(startTimestampStr) : null;
+            const elapsedSeconds = startTimestamp ? Math.floor((Date.now() - startTimestamp) / 1000) : 0;
+
+            logger.info(`SESSION TIME ELAPSED: ${elapsedSeconds} seconds`);
+        } catch (err) {
+            logger.error('Failed to log session progress:', err);
+        }
+    }
+    async validateSession(sessionId) {
+        try {
+            const session = await this.getSession(sessionId);
+            if (!session) {
+                logger.warn(`[USSD] Session ${sessionId} not found or expired`);
+                return false;
+            }
+            return true;
+        } catch (error) {
+            logger.error(`[USSD] Session validation error: ${error.message}`);
+            return false;
+        }
+    }
+    async makeRequest(service, data, msisdn, session, shortcode) {
+        return await apiService.makeRequest(service, data, msisdn, session, shortcode);
     }
 
     async handleCustomerLookup(msisdn, session, shortcode) {
