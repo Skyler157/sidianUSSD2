@@ -61,10 +61,23 @@ class BalanceService extends baseFeature {
                 shortcode
             );
 
-            if (balanceResponse.STATUS === '000') {
-                let balance = balanceResponse.DATA || '0.00';
-                if (balance.includes('Balance:')) {
-                    balance = balance.replace('Balance:', '').trim();
+            if (balanceResponse.STATUS === '000' || balanceResponse.STATUS === 'OK') {
+                let balance = '0.00';
+
+                if (balanceResponse.DATA) {
+                    const data = balanceResponse.DATA;
+                    if (data.includes('|')) {
+                        const parts = data.split('|');
+                        // DEBUG: Log the parts to see what we're getting
+                        this.logger.info(`[BALANCE] Parsing balance parts: ${JSON.stringify(parts)}`);
+
+                        // The balance should be at index 3 (0-based)
+                        // Format: "Currency|KES|Balance|-2,071,989.49 DR"
+                        if (parts.length >= 4) {
+                            balance = parts[3].replace(' DR', '').trim();
+                            this.logger.info(`[BALANCE] Extracted balance: ${balance}`);
+                        }
+                    }
                 }
 
                 sessionData.current_menu = 'balance_result';

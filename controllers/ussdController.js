@@ -207,31 +207,31 @@ class USSDController {
 
     // SESSION LOGGING 
     async handleSessionLogging(sessionId, msisdn, userInput) {
-        try {
-            const sessionData = await ussdService.getSession(sessionId);
+    try {
+        const sessionData = await ussdService.getSession(sessionId);
 
-            // Check if this a new session or a reused ID
-            if (!sessionData) {
-                const existingStartTime = await ussdService.redisService.get(`ussd_session_start:${sessionId}`);
+        // Check if this a new session or a reused ID
+        if (!sessionData) {
+            const existingStartTime = await ussdService.redisService.get(`ussd_session_start:${sessionId}`);
 
-                if (existingStartTime) {
-                    logger.warn(`[SESSION] Reused session ID detected: ${sessionId}`);
-                    // Clean up the old session data
-                    await ussdService.deleteSession(sessionId);
-                    await ussdService.redisService.del(`ussd_session_start:${sessionId}`);
-                }
-
-                await ussdService.logSessionStart(sessionId, msisdn);
-            } else {
-                // Log progress for existing session
-                await ussdService.logSessionProgress(sessionId);
+            if (existingStartTime) {
+                logger.warn(`[SESSION] Reused session ID detected: ${sessionId}`);
+                // Clean up the old session data
+                await ussdService.deleteSession(sessionId);
+                await ussdService.redisService.del(`ussd_session_start:${sessionId}`);
             }
 
-
-        } catch (error) {
-            logger.error(`[SESSION] Logging error: ${error.message}`);
+            await ussdService.logSessionStart(sessionId, msisdn);
+        } else {
+            // Log progress for existing session
+            await ussdService.logSessionProgress(sessionId);
         }
+
+
+    } catch (error) {
+        logger.error(`[SESSION] Logging error: ${error.message}`);
     }
+}
 
     // HANDLE SESSION TIMEOUTS 
     async handleSessionTimeout(sessionId, msisdn) {
@@ -315,28 +315,17 @@ class USSDController {
     }
 
     sendResponse(res, type, message) {
-    const messageSize = Buffer.byteLength(message, 'utf8');
-    
-    // Clean logging - don't show full menu content
-    if (message && message.includes('\n')) {
-        // It's a menu - log summary instead of full content
-        const firstLine = message.split('\n')[0];
-        const optionCount = (message.match(/\n\d\./g) || []).length;
-        logger.info(`[USSD] ${type.toUpperCase()}: ${firstLine} [${optionCount} options]`);
-    } else {
-        // Regular message
+        const messageSize = Buffer.byteLength(message, 'utf8');
         logger.info(`[USSD] ${type.toUpperCase()}: ${message}`);
-    }
-    
-    logger.info(`[USSD] Message size: ${messageSize} bytes`);
+        logger.info(`[USSD] Message size: ${messageSize} bytes`);
 
-    if (type === 'end') {
-        logger.info(`[SESSION] End response sent to user`);
-    }
+        if (type === 'end') {
+            logger.info(`[SESSION] End response sent to user`);
+        }
 
-    res.set('Content-Type', 'text/plain');
-    return res.send(message);
-}
+        res.set('Content-Type', 'text/plain');
+        return res.send(message);
+    }
 
     // SHOWS SESSION INFO 
     async getSessionInfo(req, res) {
