@@ -32,20 +32,34 @@ const logger = winston.createLogger({
             format: 'YYYY-MM-DD HH:mm:ss'
         }),
         winston.format.errors({ stack: true }),
-        winston.format.printf(({ timestamp, level, message, stack }) => {
+        winston.format.printf(({ timestamp, level, message, stack, className, methodName, sessionElapsed }) => {
             let logMessage = message;
             if (typeof message === 'object') {
                 try {
-                    logMessage = JSON.stringify(message, null, 2);
+                    logMessage = JSON.stringify(message);
                 } catch {
                     logMessage = String(message);
                 }
             }
 
-            if (stack && level === 'error') {
-                return `${timestamp} - ${level.toUpperCase()}: ${logMessage}\n${stack}`;
+            // Add class/method prefix if available
+            let prefix = '';
+            if (className && methodName) {
+                prefix = `${className}::${methodName}: `;
+            } else if (className) {
+                prefix = `${className}: `;
             }
-            return `${timestamp} - ${level.toUpperCase()}: ${logMessage}`;
+
+            // Add session elapsed time if available
+            let elapsedInfo = '';
+            if (sessionElapsed !== undefined) {
+                elapsedInfo = `SESSION TIME ELAPSED: ${sessionElapsed} seconds\n`;
+            }
+
+            if (stack && level === 'error') {
+                return `${elapsedInfo}${timestamp} - ${prefix}${logMessage}\n${stack}`;
+            }
+            return `${elapsedInfo}${timestamp} - ${prefix}${logMessage}`;
         })
     ),
     transports: [
@@ -97,5 +111,54 @@ const logger = winston.createLogger({
     ]
 });
 
+
+// Enhanced logging methods
+logger.logWithContext = (level, message, context = {}) => {
+    const { className, methodName, sessionElapsed, ...otherContext } = context;
+
+    return logger.log(level, message, {
+        className,
+        methodName,
+        sessionElapsed,
+        ...otherContext
+    });
+};
+
+logger.sessionStart = (sessionId, msisdn, endTime) => {
+    const startTime = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' });
+    const endTimeFormatted = new Date(endTime).toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' });
+
+    logger.info('---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
+    logger.info('                                                                              START');
+    logger.info(`SESSION STARTED @ ${startTime}`);
+    logger.info(`SESSION ENDS @ ${endTimeFormatted}`);
+    logger.info(`MSISDN: ${msisdn}`);
+    logger.info(`SESSION ID: ${sessionId}`);
+    logger.info('SESSION TIME ELAPSED: 0 seconds');
+};
+
+logger.sessionEnd = (sessionElapsed) => {
+    logger.info(`SESSION TIME ELAPSED: ${sessionElapsed} seconds`, { sessionElapsed });
+    logger.info('                                                                               END');
+    logger.info('---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
+};
+
+logger.methodCall = (className, methodName, params) => {
+    logger.logWithContext('info', params, { className, methodName });
+};
+
+logger.apiRequest = (service, data, url) => {
+    logger.info(`REQUEST [${service}]: ${data}`);
+    logger.info(`URL: ${url}`);
+};
+
+logger.apiResponse = (service, response) => {
+    logger.info(`RESPONSE [${service}]: ${response}`);
+};
+
+logger.menuDisplay = (menuName, type, message, size) => {
+    logger.info(`MENU{${menuName}}: ${type} ${message}`);
+    logger.info(`MENU SIZE: ${size} bytes`);
+};
 
 module.exports = logger;

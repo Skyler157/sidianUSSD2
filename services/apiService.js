@@ -78,17 +78,19 @@ class ApiService {
             `DEVICEID:${deviceId}:` +
             `UNIQUEID:${uniqueId}:`;
 
-        logger.info(`REQUEST [${service}]: ${formData}`);
+        const requestUrl = `${this.endpoint}?b=${formData}`;
+
+        // Log API request
+        logger.apiRequest(service, formData, requestUrl);
 
         try {
-            const requestUrl = `${this.endpoint}?b=${formData}`;
-            logger.info(`REQUEST URL [${service}]: ${requestUrl}`);
-
             const response = await axios.get(requestUrl, {
                 timeout: 30000
             });
 
-            logger.info(`RESPONSE [${service}]: ${response.data}`);
+            // Log API response
+            logger.apiResponse(service, response.data);
+
             return this.parseResponse(response.data);
 
         } catch (err) {

@@ -17,7 +17,7 @@ class RedisService {
                 socket: {
                     connectTimeout: parseInt(process.env.REDIS_CONNECT_TIMEOUT) || 15000
                 },
-                password: process.env.REDIS_PASSWORD || 'bitnami123'
+                password: process.env.REDIS_PASSWORD
             },
             useReplicas: true 
         });

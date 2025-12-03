@@ -5,7 +5,12 @@ const { v4: uuidv4 } = require('uuid');
 
 class USSDService {
     constructor() {
-        this.sessionTimeout = 180; //  minutes
+        this.sessionTimeout = parseInt(process.env.SESSION_TTL) || 10800; // 180 minutes (3 hours) default for USSD
+        this.sessionInactivityMin = parseInt(process.env.SESSION_INACTIVITY_MIN) || 30; // 30 seconds
+        this.sessionInactivityMax = parseInt(process.env.SESSION_INACTIVITY_MAX) || 60; // 60 seconds
+        this.cacheCustomerTtl = parseInt(process.env.CACHE_CUSTOMER_TTL) || 300; // 5 minutes
+        this.cacheAccountsTtl = parseInt(process.env.CACHE_ACCOUNTS_TTL) || 300; // 5 minutes
+        this.cacheTransactionTtl = parseInt(process.env.CACHE_TRANSACTION_TTL) || 900; // 15 minutes
         this.menus = require('../config/menus.json');
 
         this.testRedisConnection();
@@ -82,26 +87,8 @@ class USSDService {
             logger.error('Failed to save session start time:', err);
         }
 
-        const options = {
-            timeZone: 'Africa/Nairobi',
-            hour12: false,
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-        };
-        const startTime = new Date(now).toLocaleString('en-GB', options);
-        const endTime = new Date(now + (this.sessionTimeout * 1000)).toLocaleString('en-GB', options);
-
-        // ADD START MARKERS AT THE BEGINNING
-        logger.info('---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
-        logger.info('                                                                              START');
-        logger.info(`SESSION STARTED @ ${startTime}`);
-        logger.info(`SESSION ENDS @ ${endTime}`);
-        logger.info(`MSISDN: ${msisdn}`);
-        logger.info(`SESSION ID: ${sessionId}`);
+        const endTime = now + (this.sessionTimeout * 1000);
+        logger.sessionStart(sessionId, msisdn, endTime);
         logger.info(`[SESSION] New session started: ${sessionId}`);
     }
 
@@ -111,9 +98,12 @@ class USSDService {
             const startTimestamp = startTimestampStr ? parseInt(startTimestampStr) : null;
             const elapsedSeconds = startTimestamp ? Math.floor((Date.now() - startTimestamp) / 1000) : 0;
 
-            logger.info(`SESSION TIME ELAPSED: ${elapsedSeconds} seconds`);
+            // Only log every 30 seconds to reduce noise
+            if (elapsedSeconds > 0 && elapsedSeconds % 30 === 0) {
+                logger.info(`SESSION TIME ELAPSED: ${elapsedSeconds} seconds`, { sessionElapsed: elapsedSeconds });
+            }
         } catch (err) {
-            logger.error('Failed to log session progress:', err);
+            // Silent error for progress logging
         }
     }
 
@@ -123,10 +113,7 @@ class USSDService {
             const startTimestamp = startTimestampStr ? parseInt(startTimestampStr) : null;
             const elapsedSeconds = startTimestamp ? Math.floor((Date.now() - startTimestamp) / 1000) : 0;
 
-            // ADD END MARKERS AT THE END
-            logger.info(`SESSION TIME ELAPSED: ${elapsedSeconds} seconds`);
-            logger.info('                                                                               END');
-            logger.info('---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
+            logger.info(`[SESSION] Ended: ${sessionId} (${reason}) - Duration: ${elapsedSeconds}s`);
 
             // Cleanup
             await this.deleteSession(sessionId);
@@ -136,8 +123,11 @@ class USSDService {
         }
     }
     async logSessionState(sessionId, action, menu) {
-        const session = await this.getSession(sessionId);
-        logger.info(`[SESSION STATE] ${action} - Menu: ${menu}, Data: ${JSON.stringify(session)}`);
+        // Only log session state changes for warnings/errors
+        if (action.includes('ERROR') || action.includes('WARN')) {
+            const session = await this.getSession(sessionId);
+            logger.warn(`[SESSION STATE] ${action} - Menu: ${menu}`);
+        }
     }
     async validateSession(sessionId) {
         try {
@@ -156,14 +146,256 @@ class USSDService {
         return await apiService.makeRequest(service, data, msisdn, session, shortcode);
     }
 
+    // CACHING METHODS
+    async getCachedCustomer(msisdn) {
+        try {
+            const cacheKey = `customer:${msisdn}`;
+            const cached = await redisService.get(cacheKey);
+            return cached ? JSON.parse(cached) : null;
+        } catch (error) {
+            logger.error(`[CACHE] Error getting cached customer: ${error.message}`);
+            return null;
+        }
+    }
+
+    async cacheCustomer(msisdn, customerData) {
+        try {
+            const cacheKey = `customer:${msisdn}`;
+            await redisService.set(cacheKey, JSON.stringify(customerData), this.cacheCustomerTtl);
+            logger.debug(`[CACHE] Customer cached for ${msisdn}`);
+        } catch (error) {
+            logger.error(`[CACHE] Error caching customer: ${error.message}`);
+        }
+    }
+
+    async getCachedCustomerAccounts(customerId) {
+        try {
+            const cacheKey = `accounts:${customerId}`;
+            const cached = await redisService.get(cacheKey);
+            return cached ? JSON.parse(cached) : null;
+        } catch (error) {
+            logger.error(`[CACHE] Error getting cached accounts: ${error.message}`);
+            return null;
+        }
+    }
+
+    async cacheCustomerAccounts(customerId, accounts) {
+        try {
+            const cacheKey = `accounts:${customerId}`;
+            await redisService.set(cacheKey, JSON.stringify(accounts), this.cacheAccountsTtl);
+            logger.debug(`[CACHE] Accounts cached for customer ${customerId}`);
+        } catch (error) {
+            logger.error(`[CACHE] Error caching accounts: ${error.message}`);
+        }
+    }
+
+    async getCachedApiResponse(cacheKey) {
+        try {
+            const cached = await redisService.get(`api:${cacheKey}`);
+            return cached ? JSON.parse(cached) : null;
+        } catch (error) {
+            logger.error(`[CACHE] Error getting cached API response: ${error.message}`);
+            return null;
+        }
+    }
+
+    async cacheApiResponse(cacheKey, response, ttl = null) {
+        try {
+            const finalTtl = ttl || this.cacheTransactionTtl;
+            await redisService.set(`api:${cacheKey}`, JSON.stringify(response), finalTtl);
+            logger.debug(`[CACHE] API response cached for key: ${cacheKey}`);
+        } catch (error) {
+            logger.error(`[CACHE] Error caching API response: ${error.message}`);
+        }
+    }
+
+    async invalidateCustomerCache(msisdn, customerId = null) {
+        try {
+            const keys = [`customer:${msisdn}`];
+            if (customerId) {
+                keys.push(`accounts:${customerId}`);
+            }
+            for (const key of keys) {
+                await redisService.del(key);
+            }
+            logger.debug(`[CACHE] Invalidated cache for customer ${msisdn}`);
+        } catch (error) {
+            logger.error(`[CACHE] Error invalidating cache: ${error.message}`);
+        }
+    }
+
+    // SMART SESSION DIFFERENTIATION
+    async determineSessionType(msisdn, sessionId, shortcode) {
+        try {
+            const now = new Date();
+            const hour = now.getHours();
+            const dayOfWeek = now.getDay();
+
+            // Check if this is a frequent user
+            const userStats = await this.getUserSessionStats(msisdn);
+            const isFrequentUser = userStats && userStats.totalSessions > 5;
+
+            // Determine session type based on patterns
+            let sessionType = 'standard';
+
+            // Business hours (8 AM - 6 PM, Mon-Fri)
+            const isBusinessHours = hour >= 8 && hour <= 18 && dayOfWeek >= 1 && dayOfWeek <= 5;
+
+            // High-frequency users get priority
+            if (isFrequentUser) {
+                sessionType = 'premium';
+            }
+            // Business hours get standard priority
+            else if (isBusinessHours) {
+                sessionType = 'business';
+            }
+            // Off-hours get basic service
+            else {
+                sessionType = 'basic';
+            }
+
+            // Store session type for this session
+            await redisService.set(`session_type:${sessionId}`, sessionType, this.sessionTimeout);
+            logger.debug(`[SESSION] Determined type: ${sessionType} for ${msisdn}`);
+
+            return sessionType;
+
+        } catch (error) {
+            logger.error(`[SESSION] Error determining session type: ${error.message}`);
+            return 'standard';
+        }
+    }
+
+    async getUserSessionStats(msisdn) {
+        try {
+            const statsKey = `user_stats:${msisdn}`;
+            const stats = await redisService.get(statsKey);
+
+            if (stats) {
+                return JSON.parse(stats);
+            }
+
+            // Initialize stats for new user
+            const initialStats = {
+                totalSessions: 0,
+                lastSession: null,
+                averageSessionDuration: 0,
+                preferredServices: []
+            };
+
+            await redisService.set(statsKey, JSON.stringify(initialStats), 86400 * 30); // 30 days
+            return initialStats;
+
+        } catch (error) {
+            logger.error(`[SESSION] Error getting user stats: ${error.message}`);
+            return null;
+        }
+    }
+
+    async updateUserSessionStats(msisdn, sessionId, duration, servicesUsed = []) {
+        try {
+            const statsKey = `user_stats:${msisdn}`;
+            const existingStats = await this.getUserSessionStats(msisdn);
+
+            if (existingStats) {
+                const updatedStats = {
+                    totalSessions: existingStats.totalSessions + 1,
+                    lastSession: new Date().toISOString(),
+                    averageSessionDuration: Math.round(
+                        ((existingStats.averageSessionDuration * existingStats.totalSessions) + duration) /
+                        (existingStats.totalSessions + 1)
+                    ),
+                    preferredServices: [...new Set([...existingStats.preferredServices, ...servicesUsed])]
+                };
+
+                await redisService.set(statsKey, JSON.stringify(updatedStats), 86400 * 30);
+                logger.debug(`[SESSION] Updated stats for ${msisdn}`);
+            }
+
+        } catch (error) {
+            logger.error(`[SESSION] Error updating user stats: ${error.message}`);
+        }
+    }
+
+    async getSessionPriority(sessionType) {
+        const priorities = {
+            'premium': 1,    // Highest priority
+            'business': 2,   // Medium priority
+            'standard': 3,   // Normal priority
+            'basic': 4       // Lowest priority
+        };
+        return priorities[sessionType] || 3;
+    }
+
+    async shouldThrottleRequest(sessionId, msisdn) {
+        try {
+            // Check rate limiting based on session type
+            const sessionType = await redisService.get(`session_type:${sessionId}`);
+            const priority = await this.getSessionPriority(sessionType);
+
+            // Premium users get higher limits
+            const limits = {
+                1: 10, // premium: 10 requests per minute
+                2: 5,  // business: 5 requests per minute
+                3: 3,  // standard: 3 requests per minute
+                4: 1   // basic: 1 request per minute
+            };
+
+            const limit = limits[priority] || 3;
+            const key = `rate_limit:${msisdn}`;
+
+            const currentCount = await redisService.get(key);
+            const count = currentCount ? parseInt(currentCount) : 0;
+
+            if (count >= limit) {
+                logger.warn(`[THROTTLE] Rate limit exceeded for ${msisdn} (type: ${sessionType})`);
+                return true;
+            }
+
+            // Increment counter with 60 second TTL
+            await redisService.set(key, (count + 1).toString(), 60);
+            return false;
+
+        } catch (error) {
+            logger.error(`[THROTTLE] Error checking rate limit: ${error.message}`);
+            return false; // Allow request on error
+        }
+    }
+
+    async getSessionContext(sessionId) {
+        try {
+            const sessionData = await this.getSession(sessionId);
+            const sessionType = await redisService.get(`session_type:${sessionId}`);
+
+            return {
+                sessionId,
+                sessionType: sessionType || 'standard',
+                customer: sessionData?.customer,
+                currentMenu: sessionData?.current_menu,
+                lastActivity: sessionData?.lastActivity,
+                serviceHistory: sessionData?.serviceHistory || []
+            };
+        } catch (error) {
+            logger.error(`[SESSION] Error getting session context: ${error.message}`);
+            return null;
+        }
+    }
+
+    // ENHANCED CUSTOMER LOOKUP WITH CACHING
     async handleCustomerLookup(msisdn, session, shortcode) {
-        logger.info(
-            `[USSD] handleCustomerLookup() called | msisdn=${msisdn} | session=${session} | shortcode=${shortcode}`
-        );
+        logger.debug(`[USSD] handleCustomerLookup() called | msisdn=${msisdn}`);
 
         try {
+            // Check cache first
+            let customer = await this.getCachedCustomer(msisdn);
+            if (customer) {
+                logger.debug(`[CACHE] Customer found in cache for ${msisdn}`);
+                return customer;
+            }
+
+            // Cache miss - fetch from API
             const response = await apiService.makeRequest('GETCUSTOMER', '', msisdn, session, shortcode);
-            logger.info(`[USSD] GETCUSTOMER Response: ${JSON.stringify(response)}`);
+            logger.debug(`[USSD] GETCUSTOMER Response: ${response?.STATUS}`);
 
             if (!response) {
                 logger.error("[USSD] GETCUSTOMER returned null or undefined");
@@ -178,13 +410,13 @@ class USSDService {
                     language: response.LANGUAGE || "EN"
                 };
 
-                logger.info(`[USSD] Customer Lookup Success: ${JSON.stringify(data)}`);
+                // Cache the customer data
+                await this.cacheCustomer(msisdn, data);
+                logger.debug(`[USSD] Customer Lookup Success and cached: ${msisdn}`);
                 return data;
             }
 
-            logger.warn(
-                `[USSD] Customer Lookup Failed | STATUS=${response.STATUS} | MESSAGE=${response.DATA}`
-            );
+            logger.warn(`[USSD] Customer Lookup Failed | STATUS=${response.STATUS}`);
             return null;
 
         } catch (error) {
@@ -245,6 +477,31 @@ class USSDService {
 
         } catch (error) {
             logger.error(`[USSD] Error in handleLogin: ${error.message}`);
+            return null;
+        }
+    }
+
+    // GET AUTHENTICATED CUSTOMER (for subsequent requests in same session)
+    async getAuthenticatedCustomer(session) {
+        try {
+            const sessionData = await this.getSession(session);
+            if (sessionData?.customer?.loggedIn) {
+                logger.debug(`[AUTH] Returning authenticated customer from session ${session}`);
+
+                // Check if we need to refresh accounts from cache
+                if (!sessionData.customer.accounts) {
+                    const cachedAccounts = await this.getCachedCustomerAccounts(sessionData.customer.customerid);
+                    if (cachedAccounts) {
+                        sessionData.customer.accounts = cachedAccounts;
+                        await this.saveSession(session, sessionData);
+                    }
+                }
+
+                return sessionData.customer;
+            }
+            return null;
+        } catch (error) {
+            logger.error(`[AUTH] Error getting authenticated customer: ${error.message}`);
             return null;
         }
     }
@@ -403,11 +660,12 @@ class USSDService {
         logger.info(`[USSD] addInternalTransferBeneficiary() | mobile=${mobileNumber} | alias=${alias}`);
 
         try {
+            // Correct payload based on PHP system
             const data =
-                `SERVICETYPE:M-PESA:` +
-                `SERVICEID:MPESA:` +
-                `ACCOUNTID:${mobileNumber}:` +
-                `ALIAS:${alias}:` +
+                `SERVICETYPE:MMONEY:` +
+                `UTILITYID:MPESA:` +
+                `UTILITYACCOUNTID:${mobileNumber}:` +
+                `UTILITYALIAS:${alias}:` +
                 `CUSTOMERID:${customer.customerid}`;
 
             logger.info(`[USSD] ADD BENEFICIARY Data: ${data}`);
@@ -421,6 +679,15 @@ class USSDService {
             );
 
             logger.info(`[USSD] ADD BENEFICIARY Response: ${JSON.stringify(response)}`);
+
+            // Handle the "-)" response properly
+            if (response && (response.rawResponse === '-)' || response.DATA === '-)')) {
+                return {
+                    STATUS: '000',
+                    DATA: 'Beneficiary added successfully'
+                };
+            }
+
             return response;
 
         } catch (error) {
@@ -433,9 +700,10 @@ class USSDService {
         logger.info(`[USSD] getInternalTransferBeneficiaries() | customerid=${customer.customerid}`);
 
         try {
+            // Correct payload based on PHP system
             const data =
-                `SERVICETYPE:M-PESA:` +
-                `SERVICEID:MPESA:` +
+                `SERVICETYPE:MMONEY:` +
+                `UTILITYID:MPESA:` +
                 `CUSTOMERID:${customer.customerid}`;
 
             const response = await apiService.makeRequest(
@@ -475,357 +743,7 @@ class USSDService {
             );
 
             logger.info(`[USSD] DELETE BENEFICIARY Response: ${JSON.stringify(response)}`);
-            return response; const featureManager = require('../features');
-            const logger = require('../services/logger');
-            const ussdService = require('../services/ussdService');
-
-            class USSDController {
-                constructor() {
-                    this.menus = require('../config/menus.json');
-                    this.menuRouting = this.setupMenuRouting();
-                }
-
-                setupMenuRouting() {
-                    return {
-                        // Authentication & Core
-                        'home': { feature: 'authentication', method: 'home' },
-
-                        // Main Menus
-                        'mobilebanking': { feature: 'navigation', method: 'mobilebanking' },
-                        'myaccount': { feature: 'accountServices', method: 'myaccount' },
-                        'mobilemoney': { feature: 'mobileMoney', method: 'mobilemoney' },
-
-                        // Account Services
-                        'balance': { feature: 'balanceService', method: 'balance' },
-                        'balance_pin': { feature: 'balanceService', method: 'balance_pin' },
-                        'balance_result': { feature: 'balanceService', method: 'balance_result' },
-                        'ministatement': { feature: 'statementService', method: 'ministatement' },
-                        'ministatement_pin': { feature: 'statementService', method: 'ministatement_pin' },
-                        'ministatement_result': { feature: 'statementService', method: 'ministatement_result' },
-                        'fullstatement': { feature: 'statementService', method: 'fullstatement' },
-                        'fullstatement_pin': { feature: 'statementService', method: 'fullstatement_pin' },
-                        'fullstatement_result': { feature: 'statementService', method: 'fullstatement_result' },
-
-                        'beneficiary': { feature: 'beneficiaryService', method: 'beneficiary' },
-                        'managewithdrawbeneficiary': { feature: 'beneficiaryService', method: 'managewithdrawbeneficiary' },
-                        'addwithdrawbeneficiary': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiary' },
-                        'addwithdrawbeneficiaryname': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiaryname' },
-                        'addwithdrawbeneficiaryconfirm': { feature: 'beneficiaryService', method: 'addwithdrawbeneficiaryconfirm' },
-                        'viewwithdrawbeneficiaries': { feature: 'beneficiaryService', method: 'viewwithdrawbeneficiaries' },
-                        'deletewithdrawbeneficiary': { feature: 'beneficiaryService', method: 'deletewithdrawbeneficiary' },
-                        'deletebeneficiaryconfirm': { feature: 'beneficiaryService', method: 'deletebeneficiaryconfirm' },
-
-                        // Mobile Money
-                        'mobilemoney': { feature: 'mobileMoney', method: 'mobilemoney' },
-                        'withdraw': { feature: 'mobileMoney', method: 'withdraw' },
-                        'withdrawmsisdn': { feature: 'mobileMoney', method: 'withdrawOtherNumber' },
-                        'withdrawamount': { feature: 'mobileMoney', method: 'withdrawAmount' },
-                        'withdrawbankaccount': { feature: 'mobileMoney', method: 'withdrawBankAccount' },
-                        'withdrawtransaction': { feature: 'mobileMoney', method: 'withdrawTransaction' },
-                        'deposit': { feature: 'mobileMoney', method: 'deposit' },
-                        'depositbankaccount': { feature: 'mobileMoney', method: 'depositBankAccount' },
-                        'deposittransaction': {
-                            feature: 'mobileMoney', method: 'depositTransaction'
-                        },
-
-                        'buyfloat': { feature: 'buyfloat', method: 'buyfloat' },
-                        'buyfloatstore': { feature: 'buyfloat', method: 'buyfloatstore' },
-                        'buyfloatamount': { feature: 'buyfloat', method: 'buyfloatamount' },
-                        'buyfloatbankaccount': { feature: 'buyfloat', method: 'buyfloatbankaccount' },
-                        'buyfloatremark': { feature: 'buyfloat', method: 'buyfloatremark' },
-                        'buyfloattransaction': { feature: 'buyfloat', method: 'buyfloattransaction' },
-
-                        //Buy Goods
-                        'buygoods': { feature: 'buygoods', method: 'buygoods' },
-                        'buygoodsconfirm': { feature: 'buygoods', method: 'buygoodsconfirm' },
-                        'buygoodsamount': { feature: 'buygoods', method: 'buygoodsamount' },
-                        'buygoodsbankaccount': { feature: 'buygoods', method: 'buygoodsbankaccount' },
-                        'buygoodsremark': { feature: 'buygoods', method: 'buygoodsremark' },
-                        'buygoodstransaction': { feature: 'buygoods', method: 'buygoodstransaction' },
-
-                        //Paybill
-                        'paybill': { feature: 'paybill', method: 'paybill' },
-                        'paybillaccount': { feature: 'paybill', method: 'paybillaccount' },
-                        'paybillconfirm': { feature: 'paybill', method: 'paybillconfirm' },
-                        'paybillamount': { feature: 'paybill', method: 'paybillamount' },
-                        'paybillbankaccount': { feature: 'paybill', method: 'paybillbankaccount' },
-                        'paybillremark': { feature: 'paybill', method: 'paybillremark' },
-                        'paybilltransaction': { feature: 'paybill', method: 'paybilltransaction' },
-
-                        // Airtime 
-                        'airtime': { feature: 'airtime', method: 'airtime' },
-                        'airtimenetwork': { feature: 'airtime', method: 'airtimenetwork' },
-                        'airtimebeneficiary': { feature: 'airtime', method: 'airtimebeneficiary' },
-                        'airtimemsisdn': { feature: 'airtime', method: 'airtimemsisdn' },
-                        'airtimeamount': { feature: 'airtime', method: 'airtimeamount' },
-                        'airtimebankaccount': { feature: 'airtime', method: 'airtimebankaccount' },
-                        'airtimetransaction': { feature: 'airtime', method: 'airtimetransaction' },
-
-                        // Funds Transfer 
-                        'fundstransfer': { feature: 'fundsTransfer', method: 'fundstransfer' },
-                        'internaltransfer': { feature: 'fundsTransfer', method: 'internaltransfer' },
-                        'internaltransferbankaccount': { feature: 'fundsTransfer', method: 'internaltransferbankaccount' },
-                        'internaltransferamount': { feature: 'fundsTransfer', method: 'internaltransferamount' },
-                        'internaltransferownaccount': { feature: 'fundsTransfer', method: 'internaltransferownaccount' },
-                        'internaltransferremark': { feature: 'fundsTransfer', method: 'internaltransferremark' },
-                        'internaltransfertransaction': { feature: 'fundsTransfer', method: 'internaltransfertransaction' },
-                        'internaltransferotheraccount': { feature: 'fundsTransfer', method: 'internaltransferotheraccount' },
-
-                        // Card Transfer Routes
-                        'cardtransfer': { feature: 'fundsTransfer', method: 'cardtransfer' },
-                        'cardnumber': { feature: 'fundsTransfer', method: 'cardnumber' },
-                        'cardamount': { feature: 'fundsTransfer', method: 'cardamount' },
-                        'cardbankaccount': { feature: 'fundsTransfer', method: 'cardbankaccount' },
-                        'cardremark': { feature: 'fundsTransfer', method: 'cardremark' },
-                        'cardtransaction': { feature: 'fundsTransfer', method: 'cardtransaction' },
-
-                        // Bank Transfer Routes
-                        'banktransfer': { feature: 'fundsTransfer', method: 'banktransfer' },
-                        'bankfilter': { feature: 'fundsTransfer', method: 'bankfilter' },
-                        'banklist': { feature: 'fundsTransfer', method: 'banklist' },
-                        'bankbranch': { feature: 'fundsTransfer', method: 'bankbranch' },
-                        'bankbranchlist': { feature: 'fundsTransfer', method: 'bankbranchlist' },
-                        'banktrasferaccount': { feature: 'fundsTransfer', method: 'banktrasferaccount' },
-                        'banktrasfername': { feature: 'fundsTransfer', method: 'banktrasfername' },
-                        'banktrasfermount': { feature: 'fundsTransfer', method: 'banktrasfermount' },
-                        'banktrasferbankaccount': { feature: 'fundsTransfer', method: 'banktrasferbankaccount' },
-                        'banktrasferremark': { feature: 'fundsTransfer', method: 'banktrasferremark' },
-                        'banktrasfertransaction': { feature: 'fundsTransfer', method: 'banktrasfertransaction' },
-
-
-                        // Bill Payment Routes
-                        'billpayment': { feature: 'billPayment', method: 'billpayment' },
-                        'zuku': { feature: 'billPayment', method: 'zuku' },
-                        'billmeter': { feature: 'billPayment', method: 'billmeter' },
-                        'billamount': { feature: 'billPayment', method: 'billamount' },
-                        'billbankaccount': { feature: 'billPayment', method: 'billbankaccount' },
-                        'billtransaction': { feature: 'billPayment', method: 'billtransaction' },
-
-                        // Individual bill provider routes
-                        'dstv_account': { feature: 'billPayment', method: 'dstv_account' },
-                        'dstv_amount': { feature: 'billPayment', method: 'dstv_amount' },
-                        'dstv_account_selection': { feature: 'billPayment', method: 'dstv_account_selection' },
-                        'dstv_confirm': { feature: 'billPayment', method: 'dstv_confirm' },
-
-                        'gotv_account': { feature: 'billPayment', method: 'gotv_account' },
-                        'gotv_amount': { feature: 'billPayment', method: 'gotv_amount' },
-                        'gotv_account_selection': { feature: 'billPayment', method: 'gotv_account_selection' },
-                        'gotv_confirm': { feature: 'billPayment', method: 'gotv_confirm' },
-
-                        'zukusatellite': { feature: 'billPayment', method: 'zukusatellite' },
-                        'zukutrippleplay': { feature: 'billPayment', method: 'zukutrippleplay' },
-                        'zukusatellite_account': { feature: 'billPayment', method: 'zukusatellite_account' },
-                        'zukutrippleplay_account': { feature: 'billPayment', method: 'zukutrippleplay_account' },
-                        'zukusatellite_amount': { feature: 'billPayment', method: 'zukusatellite_amount' },
-                        'zukutrippleplay_amount': { feature: 'billPayment', method: 'zukutrippleplay_amount' },
-                        'zukusatellite_account_selection': { feature: 'billPayment', method: 'zukusatellite_account_selection' },
-                        'zukutrippleplay_account_selection': { feature: 'billPayment', method: 'zukutrippleplay_account_selection' },
-                        'zukusatellite_confirm': { feature: 'billPayment', method: 'zukusatellite_confirm' },
-                        'zukutrippleplay_confirm': { feature: 'billPayment', method: 'zukutrippleplay_confirm' },
-
-                        'startimes_account': { feature: 'billPayment', method: 'startimes_account' },
-                        'startimes_amount': { feature: 'billPayment', method: 'startimes_amount' },
-                        'startimes_account_selection': { feature: 'billPayment', method: 'startimes_account_selection' },
-                        'startimes_confirm': { feature: 'billPayment', method: 'startimes_confirm' },
-
-                        'nairobiwater_account': { feature: 'billPayment', method: 'nairobiwater_account' },
-                        'nairobiwater_amount': { feature: 'billPayment', method: 'nairobiwater_amount' },
-                        'nairobiwater_account_selection': { feature: 'billPayment', method: 'nairobiwater_account_selection' },
-                        'nairobiwater_confirm': { feature: 'billPayment', method: 'nairobiwater_confirm' },
-
-                        'jtl_account': { feature: 'billPayment', method: 'jtl_account' },
-                        'jtl_amount': { feature: 'billPayment', method: 'jtl_amount' },
-                        'jtl_account_selection': { feature: 'billPayment', method: 'jtl_account_selection' },
-                        'jtl_confirm': { feature: 'billPayment', method: 'jtl_confirm' },
-
-                        // PIN Management
-                        'changepin': { feature: 'pinManagement', method: 'changepin' },
-
-                        // Transaction results
-                        'transaction_success': { feature: 'mobileMoney', method: 'transaction_success' },
-                        'transaction_failed': { feature: 'mobileMoney', method: 'transaction_failed' }
-
-                    };
-                }
-
-                async handleUSSD(req, res) {
-                    const { sessionId, msisdn, shortcode = '527', response = '' } = req.body;
-
-                    logger.info(`[USSD] handleUSSD: ${JSON.stringify({ sessionId, msisdn, shortcode, response })}`);
-
-                    try {
-                        await this.handleSessionLogging(sessionId, msisdn, response);
-
-                        if (response === '00') {
-                            logger.info(`[USSD] Immediate exit handling for session: ${sessionId}`);
-                            await ussdService.logSessionEnd(sessionId, msisdn, 'user_end');
-                            await ussdService.deleteSession(sessionId);
-                            return this.sendResponse(res, 'end', 'Thank you for using Sidian Bank USSD service.');
-                        }
-
-                        const sessionData = await ussdService.getSession(sessionId);
-
-                        if (!sessionData) {
-                            return await this.routeToFeature('home', null, msisdn, sessionId, shortcode, response, res);
-                        }
-
-                        const currentMenu = sessionData.current_menu || 'home';
-                        const customer = sessionData.customer || null;
-
-                        return await this.routeToFeature(currentMenu, customer, msisdn, sessionId, shortcode, response, res);
-                    } catch (error) {
-                        logger.error(`[USSD] Handler Error: ${error.message}`);
-                        // Use the new logSessionEnd method for errors
-                        await ussdService.logSessionEnd(sessionId, msisdn, 'error');
-                        return this.sendResponse(res, 'end', 'System error. Please try again later.');
-                    }
-                }
-
-
-                // SESSION LOGGING 
-                async handleSessionLogging(sessionId, msisdn, userInput) {
-                    try {
-                        const sessionData = await ussdService.getSession(sessionId);
-
-                        // Check if this a new session or a reused ID
-                        if (!sessionData) {
-                            const existingStartTime = await ussdService.redisService.get(`ussd_session_start:${sessionId}`);
-
-                            if (existingStartTime) {
-                                logger.warn(`[SESSION] Reused session ID detected: ${sessionId}`);
-                                // Clean up the old session data
-                                await ussdService.deleteSession(sessionId);
-                                await ussdService.redisService.del(`ussd_session_start:${sessionId}`);
-                            }
-
-                            await ussdService.logSessionStart(sessionId, msisdn);
-                        } else {
-                            // Log progress for existing session
-                            await ussdService.logSessionProgress(sessionId);
-                        }
-
-
-                    } catch (error) {
-                        logger.error(`[SESSION] Logging error: ${error.message}`);
-                    }
-                }
-
-                // HANDLE SESSION TIMEOUTS 
-                async handleSessionTimeout(sessionId, msisdn) {
-                    try {
-                        await ussdService.logSessionEnd(sessionId, msisdn, 'timeout');
-                        await ussdService.deleteSession(sessionId);
-                        logger.info(`[SESSION] Session timeout: ${sessionId}`);
-                    } catch (error) {
-                        logger.error(`[SESSION] Timeout handling error: ${error.message}`);
-                    }
-
-                }
-
-                async validateSessionFreshness(sessionId, msisdn) {
-                    try {
-                        const sessionData = await ussdService.getSession(sessionId);
-                        const sessionStart = await ussdService.redisService.get(`ussd_session_start:${sessionId}`);
-
-                        if (sessionStart) {
-                            const startTime = parseInt(sessionStart);
-                            const elapsed = Date.now() - startTime;
-                            const isExpired = elapsed > (ussdService.sessionTimeout * 1000);
-
-                            if (isExpired) {
-                                logger.warn(`[SESSION] Expired session reused: ${sessionId}, elapsed: ${elapsed}ms`);
-                                await this.cleanupSession(sessionId, msisdn);
-                                return false;
-                            }
-                        }
-
-                        return true;
-                    } catch (error) {
-                        logger.error(`[SESSION] Freshness validation error: ${error.message}`);
-                        return false;
-                    }
-                }
-
-                async cleanupSession(sessionId, msisdn) {
-                    try {
-                        await ussdService.logSessionEnd(sessionId, msisdn, 'cleanup');
-                        await ussdService.deleteSession(sessionId);
-                        await ussdService.redisService.del(`ussd_session_start:${sessionId}`);
-                        logger.info(`[SESSION] Cleaned up session: ${sessionId}`);
-                    } catch (error) {
-                        logger.error(`[SESSION] Cleanup error: ${error.message}`);
-                    }
-                }
-                async routeToFeature(menu, customer, msisdn, session, shortcode, response, res) {
-                    const route = this.menuRouting[menu];
-
-                    if (!route) {
-                        logger.error(`[USSD] No route found for menu: ${menu}`);
-                        // Log session state before error
-                        await ussdService.logSessionState(session, 'ROUTING_ERROR', menu);
-                        return this.sendResponse(res, 'end', 'System error. Invalid menu state.');
-                    }
-
-                    logger.info(`[ROUTING DEBUG] Routing from menu: ${menu} to ${route.feature}.${route.method}`);
-                    logger.info(`[ROUTING DEBUG] Response: "${response}"`);
-                    logger.info(`[ROUTING DEBUG] Session: ${session}`);
-
-                    // ADD SESSION STATE LOGGING
-                    await ussdService.logSessionState(session, 'ROUTING', menu);
-
-                    try {
-                        return await featureManager.execute(
-                            route.feature,
-                            route.method,
-                            customer,
-                            msisdn,
-                            session,
-                            shortcode,
-                            response,
-                            res
-                        );
-                    } catch (error) {
-                        logger.error(`[USSD] Feature routing error [${route.feature}.${route.method}]: ${error.message}`);
-                        await ussdService.logSessionState(session, 'FEATURE_ERROR', menu);
-                        return this.sendResponse(res, 'end', 'Service temporarily unavailable. Please try again.');
-                    }
-                }
-
-                sendResponse(res, type, message) {
-                    const messageSize = Buffer.byteLength(message, 'utf8');
-                    logger.info(`[USSD] ${type.toUpperCase()}: ${message}`);
-                    logger.info(`[USSD] Message size: ${messageSize} bytes`);
-
-                    if (type === 'end') {
-                        logger.info(`[SESSION] End response sent to user`);
-                    }
-
-                    res.set('Content-Type', 'text/plain');
-                    return res.send(message);
-                }
-
-                // SHOWS SESSION INFO 
-                async getSessionInfo(req, res) {
-                    const { sessionId } = req.params;
-                    try {
-                        const sessionData = await ussdService.getSession(sessionId);
-                        const sessionStart = await ussdService.redisService.get(`ussd_session_start:${sessionId}`);
-
-                        const info = {
-                            sessionId,
-                            sessionData,
-                            sessionStart: sessionStart ? new Date(parseInt(sessionStart)).toISOString() : null,
-                            elapsed: sessionStart ? Math.floor((Date.now() - parseInt(sessionStart)) / 1000) : 0
-                        };
-
-                        res.json(info);
-                    } catch (error) {
-                        res.status(500).json({ error: error.message });
-                    }
-                }
-            }
-
-            module.exports = new USSDController();
+            return response;
 
         } catch (error) {
             logger.error(`[USSD] Error in deleteInternalTransferBeneficiary: ${error.message}`);

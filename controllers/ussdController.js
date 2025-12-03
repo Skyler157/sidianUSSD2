@@ -174,7 +174,8 @@ class USSDController {
     async handleUSSD(req, res) {
         const { sessionId, msisdn, shortcode = '527', response = '' } = req.body;
 
-        logger.info(`[USSD] handleUSSD: ${JSON.stringify({ sessionId, msisdn, shortcode, response })}`);
+        // Log method call with parameters
+        logger.methodCall('USSDController', 'root', [msisdn, sessionId, shortcode, response]);
 
         try {
             await this.handleSessionLogging(sessionId, msisdn, response);
@@ -289,12 +290,10 @@ class USSDController {
             return this.sendResponse(res, 'end', 'System error. Invalid menu state.');
         }
 
-        logger.info(`[ROUTING DEBUG] Routing from menu: ${menu} to ${route.feature}.${route.method}`);
-        logger.info(`[ROUTING DEBUG] Response: "${response}"`);
-        logger.info(`[ROUTING DEBUG] Session: ${session}`);
-
-        // ADD SESSION STATE LOGGING
-        await ussdService.logSessionState(session, 'ROUTING', menu);
+        // Log routing only for errors or warnings
+        if (!route) {
+            logger.warn(`[ROUTING] No route found for menu: ${menu}`);
+        }
 
         try {
             return await featureManager.execute(

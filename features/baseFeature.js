@@ -9,25 +9,21 @@ class baseFeature {
     }
 
     sendResponse(res, type, message) {
-    const messageSize = Buffer.byteLength(message, 'utf8');
-    const featureName = this.constructor.name.replace('Feature', '').replace('Service', '');
-    
-    // Clean logging - don't show full menu content
-    if (message && message.includes('\n')) {
-        // It's a menu - log summary instead of full content
-        const firstLine = message.split('\n')[0];
-        const optionCount = (message.match(/\n\d\./g) || []).length;
-        logger.info(`[${featureName.toUpperCase()}] ${type.toUpperCase()}: ${firstLine} [${optionCount} options]`);
-    } else {
-        // Regular message
-        logger.info(`[${featureName.toUpperCase()}] ${type.toUpperCase()}: ${message}`);
-    }
-    
-    logger.info(`[${featureName.toUpperCase()}] Message size: ${messageSize} bytes`);
+        const messageSize = Buffer.byteLength(message, 'utf8');
 
-    res.set('Content-Type', 'text/plain');
-    return res.send(message);
-}
+        // For responses, don't log as menu unless it's actually a menu
+        if (message && message.includes('1.') && message.includes('2.')) {
+            // It looks like a menu, use 'menu' as the name
+            logger.menuDisplay('menu', type, message, messageSize);
+        } else {
+            // Regular response
+            logger.info(`${type.toUpperCase()}: ${message}`);
+            logger.info(`MESSAGE SIZE: ${messageSize} bytes`);
+        }
+
+        res.set('Content-Type', 'text/plain');
+        return res.send(message);
+    }
 
     displayMenu(menuKey, res, prefix = '') {
         const menu = this.menus[menuKey];
@@ -43,7 +39,7 @@ class baseFeature {
             desiredOrder.forEach(key => {
                 if (menu.options[key]) {
                     if (key === '0') {
-                        message += '\n'; 
+                        message += '\n';
                     }
                     message += `${key}. ${menu.options[key]}\n`;
                 }
@@ -51,7 +47,14 @@ class baseFeature {
             message = message.trim();
         }
 
-        return this.sendResponse(res, menu.type === 'end' ? 'end' : 'con', message);
+        const messageSize = Buffer.byteLength(message, 'utf8');
+        const type = menu.type === 'end' ? 'end' : 'con';
+
+        // Use the new menu logging format
+        logger.menuDisplay(menuKey, type, message, messageSize);
+
+        res.set('Content-Type', 'text/plain');
+        return res.send(message);
     }
 
     async handleBack(sessionData, targetFeature, targetMethod, msisdn, session, shortcode, res) {
