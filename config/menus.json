@@ -1,6 +1,6 @@
 {
   "home": {
-    "message": "Hello {firstname}, welcome to Sidian Bank.Please enter your PIN to continue. Forgot your PIN? Reply with 1 to reset your PIN",
+    "message": "Hello {firstname}, welcome to Sidian Bank. Please enter your PIN to continue.\nForgot your PIN? Reply with 1 to reset your PIN.",
     "type": "input"
   },
   "mobilebanking": {
@@ -12,7 +12,8 @@
       "3": "Airtime",
       "4": "Funds Transfer",
       "5": "Bill Payment",
-      "6": "Change PIN",
+      "6": "Pesalink",
+      "7": "Change PIN",
       "0": "Back",
       "00": "Exit"
     }
@@ -215,8 +216,10 @@
     "message": "Funds Transfer",
     "type": "menu",
     "options": {
-      "1": "Transfer to own A/C",
-      "2": "Transfer to other A/C",
+      "1": "Internal Transfer",
+      "2": "Card Transfer",
+      "3": "Bank Transfer",
+      "4": "PesaLink Transfer",
       "0": "Back",
       "00": "Exit"
     }
@@ -460,6 +463,54 @@
       "1": "Confirm",
       "2": "Cancel"
     }
+  },
+  "pesalink": {
+    "message": "PesaLink Services:\n1. Send to Account\n2. Send to Phone\n3. Register Account\n4. Deregister Account\n5. Nominate Primary Account\n\n0. Home\n00. Exit",
+    "type": "menu"
+  },
+  "pesalinkaccount": {
+    "message": "Enter the first letter of the recipient bank\n\n0. Back\n00. Home\n000. Exit",
+    "type": "input"
+  },
+  "pesalinkaccountbanklist": {
+    "message": "Page {page} of {total_pages}\n\n{banks}\n\nP.Previous N.Next\n0.Back 00.Home 000.Exit",
+    "type": "menu"
+  },
+  "pesalinkaccountid": {
+    "message": "Enter the {bank_name} account number\n\n0. Back\n00. Home\n000. Exit",
+    "type": "input"
+  },
+  "pesalinkaccountamount": {
+    "message": "Enter Amount\n\n0. Back\n00. Home\n000. Exit",
+    "type": "input"
+  },
+  "pesalinkaccountbankaccount": {
+    "message": "Select source account:\n{accounts}\n\n0. Back\n00. Home\n000. Exit",
+    "type": "menu"
+  },
+  "pesalinkaccountremark": {
+    "message": "Enter Remark\n\n0. Back\n00. Home\n000. Exit",
+    "type": "input"
+  },
+  "pesalinkaccounttransaction": {
+    "message": "Enter PIN to send Ksh {amount} to {account} {bank_name} from {source_account}\n{charges}",
+    "type": "input"
+  },
+  "pesalinkphone": {
+    "message": "Enter the recipient's mobile number\n\nFormat: 07_ or 01_\n\n0. Back\n00. Home\n000. Exit",
+    "type": "input"
+  },
+  "pesalinkphonebank": {
+    "message": "Linked Banks:\n{banks}\n\n0.Back 00.Home 000.Exit",
+    "type": "menu"
+  },
+  "pesalinkipsl": {
+    "message": "{action_message}\n{accounts}\n\n0. Back\n00. Home\n000. Exit",
+    "type": "menu"
+  },
+  "pesalinkipsltransaction": {
+    "message": "{confirmation_message}\n\n1. Confirm\n2. Cancel",
+    "type": "menu"
   },
   "changepin": {
     "message": "Enter your old PIN",

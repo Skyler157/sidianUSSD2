@@ -1,3 +1,5 @@
+require('./tracing');
+
 const express = require('express');
 require('dotenv').config();
 
@@ -7,7 +9,7 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = process.env.HOST || '172.17.50.13';
 
 //  Middleware
 app.use(express.json({ limit: '10mb' }));
@@ -21,7 +23,6 @@ app.use((req, res, next) => {
     res.setHeader('X-XSS-Protection', '1; mode=block');
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 
-    // Log requests (but not excessively)
     if (process.env.NODE_ENV !== 'production' || req.path.includes('/ussd')) {
         console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
     }
@@ -89,20 +90,6 @@ app.get('/health', async (req, res) => {
     }
 });
 
-// Monitoring endpoint for session stats
-app.get('/metrics', async (req, res) => {
-    try {
-        // This would be expanded in a production system
-        res.json({
-            timestamp: new Date().toISOString(),
-            activeSessions: 'N/A', // Would need Redis SCAN or similar
-            cacheHitRate: 'N/A',   // Would need metrics collection
-            averageResponseTime: 'N/A'
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
 
 // Serve static files + simulator
 app.use(express.static('public'));
@@ -129,23 +116,19 @@ app.use('*', (req, res) => {
 
 // Start Server 
 const server = app.listen(PORT, HOST, () => {
-    console.log(`Sidian USSD Service running on ${HOST}:${PORT}`);
-    console.log(`Health: http://${HOST}:${PORT}/health`);
 });
 
 // Redis Startup Test 
 setTimeout(async () => {
-    console.log('Testing Redis connection...');
     try {
         if (await redisService.testConnection()) {
-            console.log('Redis is ready');
         }
     } catch (error) {
         console.error('Redis test failed:', error.message);
     }
 }, 2000);
 
-// Graceful Shutdown 
+// Shutdown 
 const gracefulShutdown = async () => {
     console.log('Shutting down gracefully...');
     try {

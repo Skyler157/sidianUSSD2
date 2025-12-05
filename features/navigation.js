@@ -6,9 +6,7 @@ class NavigationFeature extends baseFeature {
         super();
     }
 
-    async mobilebanking(customer, msisdn, session, shortcode, response, res) {
-        logger.info(`[NAVIGATION] mobilebanking: ${JSON.stringify({ customer, msisdn, session, shortcode, response })}`);
-        
+    async mobilebanking(customer, msisdn, session, shortcode, response, res) {        
         const sessionData = await this.ussdService.getSession(session);
         
         if (!response) {
@@ -29,7 +27,7 @@ class NavigationFeature extends baseFeature {
             '3': () => featureManager.execute('airtime', 'airtime', customer, msisdn, session, shortcode, null, res),
             '4': () => featureManager.execute('fundsTransfer', 'fundstransfer', customer, msisdn, session, shortcode, null, res),
             '5': () => featureManager.execute('billPayment', 'billpayment', customer, msisdn, session, shortcode, null, res),
-            '6': () => featureManager.execute('merchantPayment', 'paymerchant', customer, msisdn, session, shortcode, null, res),
+            '6': () => featureManager.execute('pesalink', 'pesalink', customer, msisdn, session, shortcode, null, res),
             '7': () => featureManager.execute('pinManagement', 'changepin', customer, msisdn, session, shortcode, null, res),
             '8': () => featureManager.execute('termDeposits', 'termdeposits', customer, msisdn, session, shortcode, null, res),
             '0': () => this.handleBack(sessionData, 'authentication', 'home', msisdn, session, shortcode, res), 

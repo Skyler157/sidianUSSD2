@@ -24,6 +24,7 @@ class FeatureManager {
                 'fundsTransfer': require('./fundsTransfer'),
                 'billPayment': require('./billPayment'),
                 'merchantPayment': require('./merchantPayment'),
+                'pesalink': require('./pesalink'),
                 'termDeposits': require('./termDeposits'),
                 'pinManagement': require('./pinManagement')
             };

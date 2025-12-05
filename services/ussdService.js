@@ -3,9 +3,10 @@ const apiService = require('./apiService');
 const logger = require('./logger');
 const { v4: uuidv4 } = require('uuid');
 
+
 class USSDService {
     constructor() {
-        this.sessionTimeout = parseInt(process.env.SESSION_TTL) || 10800; // 180 minutes (3 hours) default for USSD
+        this.sessionTimeout = parseInt(process.env.SESSION_TTL) || 180; // 180 seconds (3 minutes)
         this.sessionInactivityMin = parseInt(process.env.SESSION_INACTIVITY_MIN) || 30; // 30 seconds
         this.sessionInactivityMax = parseInt(process.env.SESSION_INACTIVITY_MAX) || 60; // 60 seconds
         this.cacheCustomerTtl = parseInt(process.env.CACHE_CUSTOMER_TTL) || 300; // 5 minutes
@@ -19,7 +20,6 @@ class USSDService {
     async testRedisConnection() {
         setTimeout(async () => {
             const health = await redisService.healthCheck();
-            logger.info(`Redis Health Check: ${JSON.stringify(health)}`);
 
             await redisService.testConnection();
         }, 2000);
@@ -98,12 +98,11 @@ class USSDService {
             const startTimestamp = startTimestampStr ? parseInt(startTimestampStr) : null;
             const elapsedSeconds = startTimestamp ? Math.floor((Date.now() - startTimestamp) / 1000) : 0;
 
-            // Only log every 30 seconds to reduce noise
             if (elapsedSeconds > 0 && elapsedSeconds % 30 === 0) {
                 logger.info(`SESSION TIME ELAPSED: ${elapsedSeconds} seconds`, { sessionElapsed: elapsedSeconds });
             }
         } catch (err) {
-            // Silent error for progress logging
+            
         }
     }
 
@@ -115,7 +114,6 @@ class USSDService {
 
             logger.info(`[SESSION] Ended: ${sessionId} (${reason}) - Duration: ${elapsedSeconds}s`);
 
-            // Cleanup
             await this.deleteSession(sessionId);
             await redisService.del(`ussd_session_start:${sessionId}`);
         } catch (err) {
@@ -275,7 +273,6 @@ class USSDService {
                 return JSON.parse(stats);
             }
 
-            // Initialize stats for new user
             const initialStats = {
                 totalSessions: 0,
                 lastSession: null,
@@ -352,13 +349,12 @@ class USSDService {
                 return true;
             }
 
-            // Increment counter with 60 second TTL
             await redisService.set(key, (count + 1).toString(), 60);
             return false;
 
         } catch (error) {
             logger.error(`[THROTTLE] Error checking rate limit: ${error.message}`);
-            return false; // Allow request on error
+            return false; 
         }
     }
 
@@ -383,9 +379,9 @@ class USSDService {
 
     // ENHANCED CUSTOMER LOOKUP WITH CACHING
     async handleCustomerLookup(msisdn, session, shortcode) {
-        logger.debug(`[USSD] handleCustomerLookup() called | msisdn=${msisdn}`);
-
         try {
+            logger.debug(`[USSD] handleCustomerLookup() called | msisdn=${msisdn}`);
+
             // Check cache first
             let customer = await this.getCachedCustomer(msisdn);
             if (customer) {
@@ -393,7 +389,6 @@ class USSDService {
                 return customer;
             }
 
-            // Cache miss - fetch from API
             const response = await apiService.makeRequest('GETCUSTOMER', '', msisdn, session, shortcode);
             logger.debug(`[USSD] GETCUSTOMER Response: ${response?.STATUS}`);
 
@@ -426,9 +421,6 @@ class USSDService {
     }
 
     async handleLogin(customer, pin, msisdn, session, shortcode) {
-        logger.info(
-            `[USSD] handleLogin() called | customerid=${customer.customerid} | msisdn=${msisdn} | pin=[HIDDEN]`
-        );
 
         try {
             const data = `LOGINMPIN:${pin}:CUSTOMERID:${customer.customerid}`;
@@ -440,8 +432,6 @@ class USSDService {
                 session,
                 shortcode
             );
-
-            logger.info(`[USSD] LOGIN Response: ${JSON.stringify(response)}`);
 
             if (!response) {
                 logger.error("[USSD] LOGIN returned null or undefined");
@@ -466,7 +456,6 @@ class USSDService {
                     loggedIn: true
                 };
 
-                logger.info(`[USSD] Login Success: ${JSON.stringify(data)}`);
                 return data;
             }
 
@@ -481,14 +470,13 @@ class USSDService {
         }
     }
 
-    // GET AUTHENTICATED CUSTOMER (for subsequent requests in same session)
+    // GET AUTHENTICATED CUSTOMER
     async getAuthenticatedCustomer(session) {
         try {
             const sessionData = await this.getSession(session);
             if (sessionData?.customer?.loggedIn) {
                 logger.debug(`[AUTH] Returning authenticated customer from session ${session}`);
 
-                // Check if we need to refresh accounts from cache
                 if (!sessionData.customer.accounts) {
                     const cachedAccounts = await this.getCachedCustomerAccounts(sessionData.customer.customerid);
                     if (cachedAccounts) {
@@ -660,7 +648,6 @@ class USSDService {
         logger.info(`[USSD] addInternalTransferBeneficiary() | mobile=${mobileNumber} | alias=${alias}`);
 
         try {
-            // Correct payload based on PHP system
             const data =
                 `SERVICETYPE:MMONEY:` +
                 `UTILITYID:MPESA:` +
@@ -680,7 +667,6 @@ class USSDService {
 
             logger.info(`[USSD] ADD BENEFICIARY Response: ${JSON.stringify(response)}`);
 
-            // Handle the "-)" response properly
             if (response && (response.rawResponse === '-)' || response.DATA === '-)')) {
                 return {
                     STATUS: '000',
@@ -700,7 +686,6 @@ class USSDService {
         logger.info(`[USSD] getInternalTransferBeneficiaries() | customerid=${customer.customerid}`);
 
         try {
-            // Correct payload based on PHP system
             const data =
                 `SERVICETYPE:MMONEY:` +
                 `UTILITYID:MPESA:` +
@@ -913,7 +898,6 @@ class USSDService {
             const response = await this.makeDirectTransferRequest(data);
 
 
-            // Response parsing
             let status = '999';
             let message = 'Transfer failed. Please try again later.';
 
@@ -1144,6 +1128,38 @@ class USSDService {
         }
     }
 
+    async handlePesaLinkTransfer(customer, sourceAccount, recipientAccount, recipientName, amount, remark, pin, msisdn, session, shortcode) {
+        logger.info(`[PESALINK] handlePesaLinkTransfer() | from=${sourceAccount} | to=${recipientAccount} | amount=${amount}`);
+
+        try {
+            const data =
+                `FORMID:B-:` +
+                `MERCHANTID:PESALINK:` +
+                `BANKACCOUNTID:${sourceAccount}:` +
+                `TOACCOUNT:${recipientAccount}:` +
+                `AMOUNT:${amount}:` +
+                `INFOFIELD1:${recipientName}:` +
+                `MESSAGE:${remark}:` +
+                `CUSTOMERID:${customer.customerid}:` +
+                `MOBILENUMBER:${msisdn}:` +
+                `TMPIN:${pin}`;
+
+            const response = await apiService.makeRequest(
+                "PESALINK",
+                data,
+                msisdn,
+                session,
+                shortcode
+            );
+
+            logger.info(`[PESALINK] Response: ${JSON.stringify(response)}`);
+            return response;
+
+        } catch (error) {
+            logger.error(`[PESALINK] Error in handlePesaLinkTransfer: ${error.message}`);
+            return { STATUS: '999', DATA: 'Service temporarily unavailable' };
+        }
+    }
 
     async handleTermDeposit(customer, depositType, tenure, amount, accountNumber, msisdn, session, shortcode) {
         logger.info(`[USSD] handleTermDeposit() | type=${depositType} | tenure=${tenure} | amount=${amount} | account=${accountNumber}`);
@@ -1209,7 +1225,6 @@ class USSDService {
 
     cleanXMLResponse(xmlString) {
         try {
-            // Remove XML tags and get content
             const clean = xmlString.replace(/<\/?[^>]+(>|$)/g, "").trim();
             return clean;
         } catch (error) {

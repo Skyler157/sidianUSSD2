@@ -61,11 +61,19 @@ class StatementService extends baseFeature {
                 shortcode
             );
 
-            if (statementResponse.STATUS === '000') {
+            // FIXED: Properly handle response
+            if (statementResponse.STATUS === '000' || statementResponse.STATUS === 'OK') {
                 let statementData = statementResponse.DATA || 'No transactions found';
                 
+                // Clean up the message
                 if (statementData.includes('Mini Statement:')) {
                     statementData = statementData.replace('Mini Statement:', '').trim();
+                }
+                
+                // FIX: Check if message contains "Error:" but status is OK
+                if (statementData.toLowerCase().includes('error:')) {
+                    // Extract the actual message after "Error:"
+                    statementData = statementData.split('Error:')[1]?.trim() || statementData;
                 }
 
                 sessionData.current_menu = 'ministatement_result';
@@ -75,6 +83,7 @@ class StatementService extends baseFeature {
                 const message = `Account: ${sessionData.selected_account}\nMini Statement:\n${statementData}\n\n0. Back\n00. Exit`;
                 return this.sendResponse(res, 'con', message);
             } else {
+                // Only show as error if status is NOT '000' or 'OK'
                 const errorMsg = statementResponse.DATA || 'Unable to fetch mini statement';
                 return this.sendResponse(res, 'end', `Sorry, we couldn't retrieve your mini statement. Error: ${errorMsg}`);
             }
@@ -151,20 +160,36 @@ class StatementService extends baseFeature {
                 shortcode
             );
 
-            if (statementResponse.STATUS === '000') {
-                let statementData = statementResponse.DATA || 'No transactions found';
+            // FIXED: Check for success properly
+            if (statementResponse.STATUS === '000' || statementResponse.STATUS === 'OK') {
+                let statementData = statementResponse.DATA || 'Statement request processed successfully';
                 
+                // Clean up the message
                 if (statementData.includes('Full Statement:')) {
                     statementData = statementData.replace('Full Statement:', '').trim();
+                }
+                
+                // FIX: Check if message contains "Error:" but status is OK
+                if (statementData.toLowerCase().includes('error:')) {
+                    // Extract the actual message after "Error:"
+                    statementData = statementData.split('Error:')[1]?.trim() || statementData;
+                }
+                
+                // FIX: Check if message contains "Dear" (personalized message)
+                if (statementData.includes('Dear')) {
+                    // This is a personalized success message, not an error
+                    this.logger.info(`[STATEMENT] Personalized success message: ${statementData}`);
                 }
 
                 sessionData.current_menu = 'fullstatement_result';
                 sessionData.statement_data = statementData;
                 await this.ussdService.saveSession(session, sessionData);
 
-                const message = `Account: ${sessionData.selected_account}\nFull Statement:\n${statementData}\n\n0. Back\n00. Exit`;
+                // FIXED: Don't prefix with "Error:" when status is OK
+                const message = `Account: ${sessionData.selected_account}\n${statementData}\n\n0. Back\n00. Exit`;
                 return this.sendResponse(res, 'con', message);
             } else {
+                // Only show as error if status is NOT '000' or 'OK'
                 const errorMsg = statementResponse.DATA || 'Unable to fetch full statement';
                 return this.sendResponse(res, 'end', `Sorry, we couldn't retrieve your full statement. Error: ${errorMsg}`);
             }
@@ -178,7 +203,7 @@ class StatementService extends baseFeature {
         const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
-            const message = `Account: ${sessionData.selected_account}\nFull Statement:\n${sessionData.statement_data}\n\n0. Back\n00. Exit`;
+            const message = `Account: ${sessionData.selected_account}\n${sessionData.statement_data}\n\n0. Back\n00. Exit`;
             return this.sendResponse(res, 'con', message);
         }
 

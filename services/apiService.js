@@ -21,7 +21,6 @@ class ApiService {
     }
 
     parseResponse(response) {
-        logger.info(`RAW RESPONSE: ${response}`);
 
         // Handle XML response
         if (response.includes('<string xmlns="http://tempuri.org/">')) {
@@ -33,7 +32,6 @@ class ApiService {
         // Clean the response - remove any non-printable characters
         response = response.replace(/[^\x20-\x7E]/g, '');
 
-        logger.info(`CLEANED RESPONSE: ${response}`);
 
         if (response.startsWith('000:')) {
             return { STATUS: '000', DATA: 'Deposit initiated successfully' };

@@ -6,7 +6,6 @@ class AccountServicesFeature extends baseFeature {
     }
 
     async myaccount(customer, msisdn, session, shortcode, response, res) {
-        this.logger.info(`[ACCOUNT] myaccount: ${msisdn}, session: ${session}`);
 
         if (!response) {
             await this.updateSessionMenu(session, 'myaccount', 'mobilebanking');

@@ -6,7 +6,6 @@ class AuthenticationFeature extends baseFeature {
     }
 
     async home(customer, msisdn, session, shortcode, response, res) {
-        this.logger.info(`[AUTH] home: ${msisdn}, session: ${session}`);
 
         if (!customer) {
             customer = await this.ussdService.handleCustomerLookup(msisdn, session, shortcode);
@@ -18,7 +17,7 @@ class AuthenticationFeature extends baseFeature {
         if (!response) {
             const sessionData = { customer, current_menu: 'home', previous_menu: 'home' };
             await this.ussdService.saveSession(session, sessionData);
-            
+
             const message = this.menus.home.message.replace('{firstname}', customer.firstname);
             return this.sendResponse(res, 'con', message);
         }
@@ -31,13 +30,13 @@ class AuthenticationFeature extends baseFeature {
 
         if (loggedInCustomer) {
             loggedInCustomer.loggedIn = true;
-            const sessionData = { 
-                customer: loggedInCustomer, 
-                current_menu: 'mobilebanking', 
-                previous_menu: 'home' 
+            const sessionData = {
+                customer: loggedInCustomer,
+                current_menu: 'mobilebanking',
+                previous_menu: 'home'
             };
             await this.ussdService.saveSession(session, sessionData);
-            
+
             const featureManager = require('./index');
             return await featureManager.execute('navigation', 'mobilebanking', loggedInCustomer, msisdn, session, shortcode, null, res);
         } else {

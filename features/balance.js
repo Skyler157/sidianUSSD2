@@ -6,7 +6,6 @@ class BalanceService extends baseFeature {
     }
 
     async balance(customer, msisdn, session, shortcode, response, res) {
-        this.logger.info(`[BALANCE] balance: ${msisdn}, session: ${session}`);
         const sessionData = await this.updateSessionMenu(session, 'balance', 'myaccount');
 
         if (!response) {
@@ -37,7 +36,6 @@ class BalanceService extends baseFeature {
     }
 
     async balance_pin(customer, msisdn, session, shortcode, response, res) {
-        this.logger.info(`[BALANCE] balance_pin: ${msisdn}, session: ${session}`);
         const sessionData = await this.ussdService.getSession(session);
 
         if (!response) {
@@ -68,14 +66,10 @@ class BalanceService extends baseFeature {
                     const data = balanceResponse.DATA;
                     if (data.includes('|')) {
                         const parts = data.split('|');
-                        // DEBUG: Log the parts to see what we're getting
-                        this.logger.info(`[BALANCE] Parsing balance parts: ${JSON.stringify(parts)}`);
 
-                        // The balance should be at index 3 (0-based)
-                        // Format: "Currency|KES|Balance|-2,071,989.49 DR"
                         if (parts.length >= 4) {
                             balance = parts[3].replace(' DR', '').trim();
-                            this.logger.info(`[BALANCE] Extracted balance: ${balance}`);
+                            this.logger.info(`[BALANCE] Balance: ${balance}`);
                         }
                     }
                 }

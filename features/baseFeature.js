@@ -58,19 +58,15 @@ class baseFeature {
     }
 
     async handleBack(sessionData, targetFeature, targetMethod, msisdn, session, shortcode, res) {
-        this.logger.info(`[NAVIGATION] Handling back from ${sessionData.current_menu} to ${targetMethod} via ${targetFeature}`);
 
         const backFeature = this.getBackFeature(sessionData.current_menu);
         const backMethod = this.getBackMethod(sessionData.current_menu);
-
-        this.logger.info(`[NAVIGATION] Back mapping result: ${sessionData.current_menu} -> ${backMethod} (${backFeature})`);
 
         sessionData.current_menu = backMethod;
         await this.ussdService.saveSession(session, sessionData);
 
         const featureManager = require('./index');
 
-        this.logger.info(`[NAVIGATION DEBUG] Executing: ${backFeature}.${backMethod}`);
 
         return await featureManager.execute(backFeature, backMethod, sessionData.customer, msisdn, session, shortcode, null, res);
     }
@@ -112,7 +108,6 @@ class baseFeature {
         await this.ussdService.saveSession(session, sessionData);
 
         const verifySession = await this.ussdService.getSession(session);
-        this.logger.info(`[SESSION] Updated menu: ${previousMenu} -> ${currentMenu}`);
         return sessionData;
     }
 
@@ -322,6 +317,25 @@ class baseFeature {
             'jtl_account_selection': 'jtl_amount',
             'jtl_confirm': 'jtl_account_selection',
 
+            'pesalink': 'navigation',
+            'pesalinkaccount': 'pesalink',
+            'pesalinkaccountbanklist': 'pesalinkaccount',
+            'pesalinkaccountid': 'pesalinkaccountbanklist',
+            'pesalinkaccountamount': 'pesalinkaccountid',
+            'pesalinkaccountbankaccount': 'pesalinkaccountamount',
+            'pesalinkaccountremark': 'pesalinkaccountbankaccount',
+            'pesalinkaccounttransaction': 'pesalinkaccountremark',
+
+            'pesalinkphone': 'pesalink',
+            'pesalinkphonebank': 'pesalinkphone',
+            'pesalinkphoneamount': 'pesalinkphonebank',
+            'pesalinkphonebankaccount': 'pesalinkphoneamount',
+            'pesalinkphoneremark': 'pesalinkphonebankaccount',
+            'pesalinkphonetransaction': 'pesalinkphoneremark',
+
+            'pesalinkipsl': 'pesalink',
+            'pesalinkipsltransaction': 'pesalinkipsl',
+
 
             'changepin': 'navigation',
             'default': 'navigation'
@@ -471,6 +485,25 @@ class baseFeature {
             'jtl_amount': 'jtl_account',
             'jtl_account_selection': 'jtl_amount',
             'jtl_confirm': 'jtl_account_selection',
+
+            'pesalink': 'mobilebanking',
+            'pesalinkaccount': 'pesalink',
+            'pesalinkaccountbanklist': 'pesalinkaccount',
+            'pesalinkaccountid': 'pesalinkaccountbanklist',
+            'pesalinkaccountamount': 'pesalinkaccountid',
+            'pesalinkaccountbankaccount': 'pesalinkaccountamount',
+            'pesalinkaccountremark': 'pesalinkaccountbankaccount',
+            'pesalinkaccounttransaction': 'pesalinkaccountremark',
+
+            'pesalinkphone': 'pesalink',
+            'pesalinkphonebank': 'pesalinkphone',
+            'pesalinkphoneamount': 'pesalinkphonebank',
+            'pesalinkphonebankaccount': 'pesalinkphoneamount',
+            'pesalinkphoneremark': 'pesalinkphonebankaccount',
+            'pesalinkphonetransaction': 'pesalinkphoneremark',
+
+            'pesalinkipsl': 'pesalink',
+            'pesalinkipsltransaction': 'pesalinkipsl',
 
 
             'changepin': 'mobilebanking',

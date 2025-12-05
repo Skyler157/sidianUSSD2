@@ -38,7 +38,6 @@ class RedisService {
             logger.info('Redis node added to cluster');
         });
 
-        // Connect immediately
         this.client.connect().catch(err => {
             logger.error('Redis Cluster connection failed:', err);
         });
@@ -94,7 +93,6 @@ class RedisService {
 
             const success = retrieved === testValue;
             if (success) {
-                logger.info('Redis Cluster test PASSED');
             } else {
                 logger.error('Redis Cluster test FAILED - value mismatch');
             }

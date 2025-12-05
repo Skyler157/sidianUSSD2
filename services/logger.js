@@ -2,7 +2,6 @@ const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
 
-// Create logs directory if it doesn't exist
 const logsDir = path.join(__dirname, '../logs');
 try {
     if (!fs.existsSync(logsDir)) {
@@ -42,7 +41,6 @@ const logger = winston.createLogger({
                 }
             }
 
-            // Add class/method prefix if available
             let prefix = '';
             if (className && methodName) {
                 prefix = `${className}::${methodName}: `;
@@ -91,6 +89,12 @@ const logger = winston.createLogger({
                             logMessage = String(message);
                         }
                     }
+
+                    if (typeof logMessage === 'string') {
+                        logMessage = logMessage.replace(/\n/g, '\\n'); 
+                        // OR: logMessage = logMessage.replace(/\n/g, ' '); // Replace with spaces
+                    }
+
                     return `${timestamp} - ${level}: ${logMessage}`;
                 })
             )
@@ -112,7 +116,6 @@ const logger = winston.createLogger({
 });
 
 
-// Enhanced logging methods
 logger.logWithContext = (level, message, context = {}) => {
     const { className, methodName, sessionElapsed, ...otherContext } = context;
 
@@ -133,7 +136,6 @@ logger.sessionStart = (sessionId, msisdn, endTime) => {
     logger.info(`SESSION STARTED @ ${startTime}`);
     logger.info(`SESSION ENDS @ ${endTimeFormatted}`);
     logger.info(`MSISDN: ${msisdn}`);
-    logger.info(`SESSION ID: ${sessionId}`);
     logger.info('SESSION TIME ELAPSED: 0 seconds');
 };
 
@@ -157,8 +159,15 @@ logger.apiResponse = (service, response) => {
 };
 
 logger.menuDisplay = (menuName, type, message, size) => {
-    logger.info(`MENU{${menuName}}: ${type} ${message}`);
-    logger.info(`MENU SIZE: ${size} bytes`);
-};
+    const escapedMessage = message
+        .replace(/\n/g, '\\n')  
+        .replace(/\r/g, '\\r'); 
+
+    logger.info(`MENU{${menuName}}: ${type} ${escapedMessage}`);
+
+    if (size !== undefined) {
+        logger.info(`MESSAGE SIZE: ${size} bytes`);
+    }
+};;
 
 module.exports = logger;

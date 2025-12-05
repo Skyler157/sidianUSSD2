@@ -2,6 +2,7 @@ const featureManager = require('../features');
 const logger = require('../services/logger');
 const ussdService = require('../services/ussdService');
 
+
 class USSDController {
     constructor() {
         this.menus = require('../config/menus.json');
@@ -161,6 +162,25 @@ class USSDController {
             'jtl_account_selection': { feature: 'billPayment', method: 'jtl_account_selection' },
             'jtl_confirm': { feature: 'billPayment', method: 'jtl_confirm' },
 
+            'pesalink': { feature: 'pesalink', method: 'pesalink' },
+            'pesalinkaccount': { feature: 'pesalink', method: 'pesalinkaccount' },
+            'pesalinkaccountbanklist': { feature: 'pesalink', method: 'pesalinkaccountbanklist' },
+            'pesalinkaccountid': { feature: 'pesalink', method: 'pesalinkaccountid' },
+            'pesalinkaccountamount': { feature: 'pesalink', method: 'pesalinkaccountamount' },
+            'pesalinkaccountbankaccount': { feature: 'pesalink', method: 'pesalinkaccountbankaccount' },
+            'pesalinkaccountremark': { feature: 'pesalink', method: 'pesalinkaccountremark' },
+            'pesalinkaccounttransaction': { feature: 'pesalink', method: 'pesalinkaccounttransaction' },
+
+            'pesalinkphone': { feature: 'pesalink', method: 'pesalinkphone' },
+            'pesalinkphonebank': { feature: 'pesalink', method: 'pesalinkphonebank' },
+            'pesalinkphoneamount': { feature: 'pesalink', method: 'pesalinkphoneamount' },
+            'pesalinkphonebankaccount': { feature: 'pesalink', method: 'pesalinkphonebankaccount' },
+            'pesalinkphoneremark': { feature: 'pesalink', method: 'pesalinkphoneremark' },
+            'pesalinkphonetransaction': { feature: 'pesalink', method: 'pesalinkphonetransaction' },
+
+            'pesalinkipsl': { feature: 'pesalink', method: 'pesalinkipsl' },
+            'pesalinkipsltransaction': { feature: 'pesalink', method: 'pesalinkipsltransaction' },
+
             // PIN Management
             'changepin': { feature: 'pinManagement', method: 'changepin' },
 
@@ -174,14 +194,11 @@ class USSDController {
     async handleUSSD(req, res) {
         const { sessionId, msisdn, shortcode = '527', response = '' } = req.body;
 
-        // Log method call with parameters
-        logger.methodCall('USSDController', 'root', [msisdn, sessionId, shortcode, response]);
-
         try {
+
             await this.handleSessionLogging(sessionId, msisdn, response);
 
             if (response === '00') {
-                logger.info(`[USSD] Immediate exit handling for session: ${sessionId}`);
                 await ussdService.logSessionEnd(sessionId, msisdn, 'user_end');
                 await ussdService.deleteSession(sessionId);
                 return this.sendResponse(res, 'end', 'Thank you for using Sidian Bank USSD service.');
@@ -197,9 +214,9 @@ class USSDController {
             const customer = sessionData.customer || null;
 
             return await this.routeToFeature(currentMenu, customer, msisdn, sessionId, shortcode, response, res);
+
         } catch (error) {
             logger.error(`[USSD] Handler Error: ${error.message}`);
-            // Use the new logSessionEnd method for errors
             await ussdService.logSessionEnd(sessionId, msisdn, 'error');
             return this.sendResponse(res, 'end', 'System error. Please try again later.');
         }
@@ -208,31 +225,31 @@ class USSDController {
 
     // SESSION LOGGING 
     async handleSessionLogging(sessionId, msisdn, userInput) {
-    try {
-        const sessionData = await ussdService.getSession(sessionId);
+        try {
+            const sessionData = await ussdService.getSession(sessionId);
 
-        // Check if this a new session or a reused ID
-        if (!sessionData) {
-            const existingStartTime = await ussdService.redisService.get(`ussd_session_start:${sessionId}`);
+            // Check if this a new session or a reused ID
+            if (!sessionData) {
+                const existingStartTime = await ussdService.redisService.get(`ussd_session_start:${sessionId}`);
 
-            if (existingStartTime) {
-                logger.warn(`[SESSION] Reused session ID detected: ${sessionId}`);
-                // Clean up the old session data
-                await ussdService.deleteSession(sessionId);
-                await ussdService.redisService.del(`ussd_session_start:${sessionId}`);
+                if (existingStartTime) {
+                    logger.warn(`[SESSION] Reused session ID detected: ${sessionId}`);
+                    // Clean up the old session data
+                    await ussdService.deleteSession(sessionId);
+                    await ussdService.redisService.del(`ussd_session_start:${sessionId}`);
+                }
+
+                await ussdService.logSessionStart(sessionId, msisdn);
+            } else {
+                // Log progress for existing session
+                await ussdService.logSessionProgress(sessionId);
             }
 
-            await ussdService.logSessionStart(sessionId, msisdn);
-        } else {
-            // Log progress for existing session
-            await ussdService.logSessionProgress(sessionId);
+
+        } catch (error) {
+            logger.error(`[SESSION] Logging error: ${error.message}`);
         }
-
-
-    } catch (error) {
-        logger.error(`[SESSION] Logging error: ${error.message}`);
     }
-}
 
     // HANDLE SESSION TIMEOUTS 
     async handleSessionTimeout(sessionId, msisdn) {
@@ -275,9 +292,7 @@ class USSDController {
             await ussdService.logSessionEnd(sessionId, msisdn, 'cleanup');
             await ussdService.deleteSession(sessionId);
             await ussdService.redisService.del(`ussd_session_start:${sessionId}`);
-            logger.info(`[SESSION] Cleaned up session: ${sessionId}`);
         } catch (error) {
-            logger.error(`[SESSION] Cleanup error: ${error.message}`);
         }
     }
     async routeToFeature(menu, customer, msisdn, session, shortcode, response, res) {
@@ -290,7 +305,7 @@ class USSDController {
             return this.sendResponse(res, 'end', 'System error. Invalid menu state.');
         }
 
-        // Log routing only for errors or warnings
+        // Log routing only for errors and warnings
         if (!route) {
             logger.warn(`[ROUTING] No route found for menu: ${menu}`);
         }
@@ -315,11 +330,9 @@ class USSDController {
 
     sendResponse(res, type, message) {
         const messageSize = Buffer.byteLength(message, 'utf8');
-        logger.info(`[USSD] ${type.toUpperCase()}: ${message}`);
         logger.info(`[USSD] Message size: ${messageSize} bytes`);
 
         if (type === 'end') {
-            logger.info(`[SESSION] End response sent to user`);
         }
 
         res.set('Content-Type', 'text/plain');
